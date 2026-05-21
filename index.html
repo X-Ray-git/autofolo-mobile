@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto Folo — 智能 RSS 阅读器</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1a1a24;
+    --border: #252530;
+    --text: #e4e4ed;
+    --text2: #8b8b9e;
+    --accent: #f59e0b;
+    --accent2: #f97316;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --green: #10b981;
+    --red: #ef4444;
+    --gradient: linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ef4444 100%);
+    --gradient2: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+    --gradient3: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+    --glow: 0 0 60px rgba(245, 158, 11, 0.15);
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ─── Navigation ─── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px; height: 64px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  nav .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 20px; font-weight: 700; letter-spacing: -0.5px;
+  }
+  nav .logo .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--gradient); box-shadow: 0 0 12px rgba(245,158,11,0.5);
+  }
+  nav .links { display: flex; gap: 28px; }
+  nav .links a {
+    color: var(--text2); text-decoration: none; font-size: 14px;
+    font-weight: 500; transition: color 0.2s;
+  }
+  nav .links a:hover { color: var(--text); }
+
+  /* ─── Hero ─── */
+  .hero {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 120px 32px 80px; position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: ''; position: absolute; top: -40%; left: -20%;
+    width: 140%; height: 180%;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(245,158,11,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 70% 60%, rgba(139,92,246,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse at 50% 80%, rgba(59,130,246,0.05) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hero-content { position: relative; max-width: 800px; text-align: center; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 16px; border-radius: 100px;
+    background: var(--surface2); border: 1px solid var(--border);
+    font-size: 13px; color: var(--text2); margin-bottom: 28px;
+  }
+  .hero-badge .live { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .hero h1 {
+    font-size: clamp(40px, 8vw, 72px); font-weight: 900; letter-spacing: -2px;
+    line-height: 1.08; margin-bottom: 24px;
+  }
+  .hero h1 .gradient-text {
+    background: var(--gradient); -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero p {
+    font-size: 18px; color: var(--text2); max-width: 560px;
+    margin: 0 auto 40px; line-height: 1.7;
+  }
+  .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 28px; border-radius: 100px;
+    font-size: 15px; font-weight: 600; text-decoration: none;
+    cursor: pointer; border: none; transition: all 0.25s;
+  }
+  .btn-primary {
+    background: var(--gradient); color: #0a0a0f;
+    box-shadow: 0 4px 24px rgba(245,158,11,0.25);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(245,158,11,0.35); }
+  .btn-ghost {
+    background: transparent; color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { border-color: var(--text2); background: var(--surface2); }
+
+  /* ─── Sections ─── */
+  section { padding: 100px 32px; }
+  .section-header { text-align: center; max-width: 640px; margin: 0 auto 64px; }
+  .section-header .tag {
+    display: inline-block; padding: 4px 14px; border-radius: 100px;
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 16px;
+  }
+  .section-header h2 {
+    font-size: clamp(28px, 5vw, 44px); font-weight: 800;
+    letter-spacing: -1px; margin-bottom: 16px;
+  }
+  .section-header p { color: var(--text2); font-size: 16px; }
+
+  /* ─── Features Grid ─── */
+  .features-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px; max-width: 1100px; margin: 0 auto;
+  }
+  .feature-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px; transition: all 0.3s;
+    position: relative; overflow: hidden;
+  }
+  .feature-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--gradient); opacity: 0; transition: opacity 0.3s;
+  }
+  .feature-card:hover { border-color: #333; transform: translateY(-2px); }
+  .feature-card:hover::before { opacity: 1; }
+  .feature-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin-bottom: 20px;
+  }
+  .feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .feature-card p { color: var(--text2); font-size: 14px; line-height: 1.7; }
+
+  /* ─── Architecture Diagram ─── */
+  .arch-diagram {
+    max-width: 900px; margin: 0 auto;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 48px; overflow-x: auto;
+  }
+  .arch-row { display: flex; align-items: center; gap: 12px; margin-bottom: 0; justify-content: center; flex-wrap: wrap; }
+  .arch-box {
+    padding: 12px 20px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    white-space: nowrap; transition: all 0.2s;
+  }
+  .arch-box.api { background: rgba(245,158,11,0.1); color: var(--accent); border: 1px solid rgba(245,158,11,0.2); }
+  .arch-box.llm { background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2); }
+  .arch-box.db  { background: rgba(59,130,246,0.1); color: var(--blue); border: 1px solid rgba(59,130,246,0.2); }
+  .arch-box.app { background: rgba(16,185,129,0.1); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+  .arch-box.red { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+  
+  .arch-arrow { color: var(--text2); font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .arch-arrow.down { display: flex; flex-direction: column; text-align: center; margin: 16px auto; width: 100%; align-items: center; }
+  .arch-arrow.down span { font-size: 11px; color: var(--text2); margin-bottom: 4px; font-weight: 400; }
+  
+  .parallel-group {
+    display: flex; gap: 16px; padding: 16px; border: 1px dashed var(--border);
+    border-radius: 14px; background: rgba(255,255,255,0.01); justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .split-path {
+    display: flex; gap: 40px; justify-content: center; margin: 16px 0; width: 100%;
+  }
+  .path-col {
+    display: flex; flex-direction: column; align-items: center; flex: 1; max-width: 280px;
+    background: rgba(0,0,0,0.2); padding: 20px; border-radius: 16px; border: 1px solid var(--border);
+  }
+
+  /* ─── Pipeline ─── */
+  .pipeline {
+    display: flex; gap: 16px; max-width: 1000px; margin: 0 auto;
+    flex-wrap: wrap; justify-content: center;
+  }
+  .pipeline-step {
+    flex: 1; min-width: 160px; max-width: 200px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; text-align: center;
+    position: relative;
+  }
+  .pipeline-step .num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--gradient); color: #0a0a0f;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; margin: 0 auto 14px;
+  }
+  .pipeline-step h4 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .pipeline-step p { color: var(--text2); font-size: 12px; line-height: 1.5; }
+
+  /* ─── Stats ─── */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px; max-width: 800px; margin: 0 auto;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px; text-align: center;
+  }
+  .stat-card .value {
+    font-size: 40px; font-weight: 900; letter-spacing: -1px;
+    background: var(--gradient2); -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .stat-card .label { color: var(--text2); font-size: 13px; margin-top: 4px; }
+
+  /* ─── Code Block ─── */
+  .code-block {
+    max-width: 700px; margin: 0 auto;
+    background: #0d0d14; border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; overflow-x: auto;
+  }
+  .code-block pre {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 13px; line-height: 1.8; color: #c9d1d9;
+  }
+  .code-block .keyword { color: #ff7b72; }
+  .code-block .string { color: #a5d6ff; }
+  .code-block .comment { color: #8b949e; }
+  .code-block .func { color: #d2a8ff; }
+
+  /* ─── Footer ─── */
+  footer {
+    border-top: 1px solid var(--border); padding: 40px 32px;
+    text-align: center; color: var(--text2); font-size: 13px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 640px) {
+    nav { padding: 0 16px; }
+    nav .links { gap: 14px; }
+    nav .links a { font-size: 12px; }
+    section { padding: 60px 16px; }
+    .hero { padding: 100px 16px 60px; }
+    .feature-card { padding: 24px; }
+    .arch-diagram { padding: 24px; }
+    .pipeline-step { min-width: 120px; }
+    .split-path { flex-direction: column; gap: 20px; align-items: center; }
+    .path-col { max-width: 100%; width: 100%; }
+  }
+
+  /* ─── Scroll Reveal ─── */
+  .reveal { opacity: 0; transform: translateY(24px); transition: all 0.7s ease; }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><div class="dot"></div>Auto Folo</div>
+  <div class="links">
+    <a href="#features">能力</a>
+    <a href="#pipeline">流水线</a>
+    <a href="#arch">架构</a>
+    <a href="#states">状态机</a>
+    <a href="#sync">云端</a>
+    <a href="#db">存储</a>
+    <a href="#start">开始</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge"><div class="live"></div>基于 Folo API · DeepSeek 驱动</div>
+    <h1>让 AI 替你<br><span class="gradient-text">筛选信息洪流</span></h1>
+    <p>Auto Folo 不是又一个 RSS 阅读器。它在文章到达你眼前之前，就用 LLM 理解每一篇的内容，自动过滤噪音、翻译外文、提炼摘要。你只看到真正重要的。</p>
+    <div class="hero-actions">
+      <a href="#start" class="btn btn-primary">快速开始</a>
+      <a href="#features" class="btn btn-ghost">探索能力</a>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(245,158,11,0.1);color:var(--accent)">核心能力</span>
+    <h2>不止于阅读</h2>
+    <p>每一层都经过精心设计，从数据拉取到 AI 决策，形成完整的智能信息处理闭环。</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card reveal">
+      <div class="feature-icon" style="background:rgba(245,158,11,0.1);color:var(--accent)">🎯</div>
+      <h3>AI 智能过滤</h3>
+      <p>基于 Auto Folo 的精细化 Prompt 引擎，DeepSeek 逐篇判定文章是否值得阅读。纯视觉、具身智能、币圈杂讯自动屏蔽，白名单频道和偏好作者始终保留。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon" style="background:rgba(139,92,246,0.1);color:var(--purple)">🌐</div>
+      <h3>自动翻译</h3>
+      <p>按订阅源粒度配置自动翻译。支持 DeepSeek v4-flash / v4-pro，思考模式可选，temperature、并发数均可调。翻译结果与原文无缝切换。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon" style="background:rgba(59,130,246,0.1);color:var(--blue)">📝</div>
+      <h3>AI 摘要生成</h3>
+      <p>所有未读文章自动生成一句话摘要，快速判断是否值得点开。v4-pro + 思考模式提供高质量提炼。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon" style="background:rgba(16,185,129,0.1);color:var(--green)">🖼️</div>
+      <h3>智能图片代理</h3>
+      <p>集成 Folo 官方 <code>img.folo.is</code> 代理，自动为微博、Pixiv、Instagram 等需要特定 Referer 的 CDN 补全请求头。画廊支持双击放大、捏合缩放、滑动关闭。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon" style="background:rgba(239,68,68,0.1);color:var(--red)">🎬</div>
+      <h3>视频内联播放</h3>
+      <p>Twitter 视频自动提取 poster 缩略图，点击内联播放。进度条可拖拽定位，支持暂停/播放切换，流畅不跳转外部浏览器。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon" style="background:rgba(59,130,246,0.1);color:var(--blue)">📊</div>
+      <h3>三级订阅源管理</h3>
+      <p>View → 分类 → 订阅源 树形结构，点击箭头展开折叠，点击文字查看该层级全部文章。实时未读计数徽标，搜索即时过滤。</p>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(139,92,246,0.1);color:var(--purple)">数据流水线</span>
+    <h2>从 API 到你的屏幕</h2>
+    <p>六步处理链路，每一步都可以独立配置和控制并发度。全部 LLM 调用互不干扰，16 路并行最大吞吐。</p>
+  </div>
+  <div class="pipeline">
+    <div class="pipeline-step reveal">
+      <div class="num">1</div>
+      <h4>拉取</h4>
+      <p>从 Folo API 获取 feeds / social / inbox 三类未读文章</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">2</div>
+      <h4>过滤</h4>
+      <p>DeepSeek JSON Output 逐篇判定保留/拒绝，被拒进入审核队列</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">3</div>
+      <h4>翻译</h4>
+      <p>按源自动翻译开关，仅翻译保留文章，节省 API 费用</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">4</div>
+      <h4>摘要</h4>
+      <p>全部未读文章生成一句话摘要，快速浏览核心内容</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">5</div>
+      <h4>审核</h4>
+      <p>左右滑手势审核被拒文章，捞回或确认拒绝并自动标已读</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">6</div>
+      <h4>同步</h4>
+      <p>已读状态云端同步，失败自动重试 5 次，始终与服务器一致</p>
+    </div>
+  </div>
+</section>
+
+<section id="arch">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(59,130,246,0.1);color:var(--blue)">系统架构</span>
+    <h2>Flutter × DeepSeek × Folo</h2>
+    <p>移动端 Flutter 渲染，DeepSeek 提供 AI 能力，Folo API 作为数据源，Hive 本地持久化。三个 LLM 服务独立配置。</p>
+  </div>
+  <div class="arch-diagram reveal">
+    <div class="arch-row">
+      <div class="arch-box api">Folo API</div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-box app">FeedHttp</div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-box db">Hive DB</div>
+    </div>
+    <div class="arch-arrow down">↓</div>
+    <div class="parallel-group">
+      <div class="arch-box llm">FilterWorker</div>
+      <div class="arch-box llm">TranslateWorker</div>
+      <div class="arch-box llm">SummaryWorker</div>
+    </div>
+    <div class="arch-arrow down">↓</div>
+    <div class="arch-row">
+      <div class="arch-box app">ArticleCard</div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-box app">HtmlChunkCard</div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-box app">Gallery</div>
+    </div>
+    <div class="arch-arrow down">↓</div>
+    <div class="arch-row">
+      <div class="arch-box db">已读同步</div>
+      <span class="arch-arrow">⇄</span>
+      <div class="arch-box api">Folo API</div>
+    </div>
+    <p style="text-align:center;margin-top:20px;color:var(--text2);font-size:12px">所有 LLM 调用并行 16 路 · 三组独立 LlmConfig（翻译/摘要/过滤）· Hive 本地持久化上限 5,000 篇</p>
+  </div>
+</section>
+
+<section id="start">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(16,185,129,0.1);color:var(--green)">开始使用</span>
+    <h2>三步启动</h2>
+    <p>Android 设备即可运行，需要 Folo 账号 Token 和 DeepSeek API Key。</p>
+  </div>
+  <div class="stats-grid reveal">
+    <div class="stat-card">
+      <div class="value">Flutter 3.x</div>
+      <div class="label">运行环境</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">3 模型</div>
+      <div class="label">LLM 独立配置</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">16 并发</div>
+      <div class="label">LLM 最大吞吐</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">5,000</div>
+      <div class="label">本地文章缓存</div>
+    </div>
+  </div>
+  <div style="max-width:700px;margin:48px auto 0;" class="reveal">
+    <div class="code-block">
+      <pre><span class="comment"># 1. 克隆项目</span>
+git clone <span class="string">https://github.com/your/autofolo-mobile</span>
+cd autofolo-mobile
+
+<span class="comment"># 2. 安装依赖</span>
+flutter pub get
+
+<span class="comment"># 3. 编译运行</span>
+flutter build apk --release
+flutter install
+
+<span class="comment"># 然后在设置页填入 Folo Token 和 DeepSeek API Key</span></pre>
+    </div>
+  </div>
+</section>
+
+<section id="states">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(59,130,246,0.1);color:var(--blue)">状态机</span>
+    <h2>文章生命周期</h2>
+    <p>每篇文章在系统内的状态流转。</p>
+  </div>
+  <div class="arch-diagram reveal" style="max-width:800px">
+    <div class="arch-row">
+      <div class="arch-box api">API 拉取</div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-box app">pending</div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-box llm">AI Filter</div>
+    </div>
+    
+    <div class="split-path">
+      <div class="path-col">
+        <div class="arch-arrow down"><span>↙ (判定保留)</span></div>
+        <div class="arch-box db">kept</div>
+        <div class="arch-arrow down">↓</div>
+        <div class="arch-row" style="gap:12px;">
+          <div class="arch-box app">Translate</div>
+          <div class="arch-box app">Summary</div>
+        </div>
+        <div class="arch-arrow down">↓</div>
+        <div class="arch-box app" style="width:100%;text-align:center;">用户阅读</div>
+      </div>
+      
+      <div class="path-col">
+        <div class="arch-arrow down"><span>(判定拒绝) ↘</span></div>
+        <div class="arch-box red">ai_rejected</div>
+        <div class="arch-arrow down">↓</div>
+        <div class="arch-box red" style="width:100%;text-align:center;">进入审核页</div>
+        <div class="arch-arrow down">↓</div>
+        <div class="arch-box app" style="width:100%;text-align:center;font-size:12px;">左滑确认拒绝 (标已读)<br>右滑捞回 (转为 kept)</div>
+      </div>
+    </div>
+
+    <div class="arch-arrow down">↓</div>
+    <div class="arch-row">
+      <div class="arch-box api">已读状态云端同步</div>
+    </div>
+    
+    <p style="text-align:center;margin-top:24px;color:var(--text2);font-size:12px">双向同步逻辑：API未读→本地未读；本地已读→API已读 (失败自动重试×5)</p>
+  </div>
+</section>
+
+<section id="sync">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(245,158,11,0.1);color:var(--accent)">云端交互</span>
+    <h2>Folo API 数据流</h2>
+    <p>完整的请求链路与状态同步机制。</p>
+  </div>
+  <div class="pipeline">
+    <div class="pipeline-step reveal">
+      <div class="num">1</div>
+      <h4>GET subscriptions</h4>
+      <p>拉取全部订阅源<br>缓存 TTL 30min<br>image 字段→Feed图标</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">2</div>
+      <h4>POST entries</h4>
+      <p>view=0 feeds<br>view=1 social<br>翻至不满页止</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">3</div>
+      <h4>POST entries/inbox</h4>
+      <p>遍历 inbox 列表<br>limit:100 拉取<br>+ GET detail?id=</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">4</div>
+      <h4>POST reads</h4>
+      <p>标已读云端同步<br>失败重试×3<br>ReadSyncService队列</p>
+    </div>
+    <div class="pipeline-step reveal">
+      <div class="num">5</div>
+      <h4>双向同步</h4>
+      <p>API未读→本地未<br>本地已读→API<br>已读窗口拉取</p>
+    </div>
+  </div>
+</section>
+
+<section id="db">
+  <div class="section-header">
+    <span class="tag" style="background:rgba(16,185,129,0.1);color:var(--green)">本地存储</span>
+    <h2>Hive 数据模型</h2>
+    <p>6 个 Box，上限 5,000 篇文章，同步写入。</p>
+  </div>
+  <div class="code-block reveal" style="max-width:750px">
+    <pre>ArticleModel (18 fields)
+  entryId / feedId / feedTitle / feedImage / title / url / content
+  publishedAt / isRead / category / subscriptionCategory / author
+  imageUrl / isRejectedByAi / filterReason / filterReviewed
+
+Box: articleDb    — 文章持久化 (limit 5,000)
+Box: readStatus   — 已读状态标记 (双向同步源)
+Box: setting      — LLM配置 / Token / Filter Prompt
+Box: localCache   — 订阅源缓存 (TTL 30min, key: v2)
+Box: translations — 翻译记录
+Box: summaries    — 摘要记录</pre>
+  </div>
+</section>
+
+<footer>
+  <p>Built with Flutter &amp; DeepSeek · 遵循 <a href="https://github.com/RSSNext/Folo">Folo</a> API 规范 · 数据不经过第三方服务器</p>
+</footer>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
