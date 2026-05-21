@@ -91,54 +91,119 @@ class _ArticleCardContent extends StatelessWidget {
 
       return RepaintBoundary(
         child: Card(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          shape: article.isRejectedByAi
-              ? RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Color(0xFFF59E0B), width: 2),
-                )
-              : null,
-          clipBehavior: Clip.antiAlias,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          clipBehavior: Clip.antiAlias, // 确保内部带色条的 Container 会被完美裁切圆角
           elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+              width: 1,
+            ),
+          ),
           child: InkWell(
             onTap: onTap,
             onLongPress: () =>
                 _showTranslateMenu(context, isTranslated, isPending),
-            child: Padding(
+            child: Container(
+              // 将 AI 拒文左侧色条移至 InkWell 内部，水波纹现在可正常覆盖全卡片
+              decoration: article.isRejectedByAi
+                  ? BoxDecoration(
+                      border: Border(
+                        left: BorderSide(
+                          color: colorScheme.primary,
+                          width: 4,
+                        ),
+                      ),
+                    )
+                  : null,
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // AI 拒文标记优化显示
+                  if (article.isRejectedByAi && article.filterReason != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: colorScheme.primary.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              size: 14,
+                              color: colorScheme.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                article.filterReason!,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.primary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (!article.isRead) ...[
-                        Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(top: 6, right: 8),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ],
                       Expanded(
-                        child: Text(
-                          displayTitle,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: article.isRead
-                                ? FontWeight.w400
-                                : FontWeight.w600,
-                            color: article.isRead
-                                ? colorScheme.onSurface.withValues(alpha: 0.7)
-                                : colorScheme.onSurface,
+                        // 使用 Text.rich 和 WidgetSpan 确保红点与文字第一行绝对对齐，不受字体缩放影响
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              if (!article.isRead)
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.primary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              TextSpan(
+                                text: displayTitle,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  height: 1.4,
+                                  fontWeight: article.isRead
+                                      ? FontWeight.w400
+                                      : FontWeight.w600,
+                                  color: article.isRead
+                                      ? colorScheme.onSurface
+                                          .withValues(alpha: 0.7)
+                                      : colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
                           ),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // 翻译状态标签，移除了生硬的透明度叠加，改用规范的 Material 颜色
                       if (isPending) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -147,23 +212,18 @@ class _ArticleCardContent extends StatelessWidget {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: colorScheme.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: colorScheme.primary.withValues(
-                                alpha: 0.25,
-                              ),
-                            ),
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               SizedBox(
-                                width: 12,
-                                height: 12,
+                                width: 10,
+                                height: 10,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 1.8,
-                                  color: colorScheme.primary,
+                                  strokeWidth: 2,
+                                  color: colorScheme.onPrimaryContainer,
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -172,7 +232,7 @@ class _ArticleCardContent extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: colorScheme.primary,
+                                  color: colorScheme.onPrimaryContainer,
                                 ),
                               ),
                             ],
@@ -180,12 +240,19 @@ class _ArticleCardContent extends StatelessWidget {
                         ),
                       ] else if (isTranslated) ...[
                         const SizedBox(width: 8),
-                        Tooltip(
-                          message: '已翻译',
-                          child: Icon(
-                            Icons.language,
-                            size: 18,
-                            color: colorScheme.primary,
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Tooltip(
+                            message: '已翻译',
+                            child: Icon(
+                              Icons.translate,
+                              size: 16,
+                              color: colorScheme.primary,
+                            ),
                           ),
                         ),
                       ],
@@ -203,60 +270,62 @@ class _ArticleCardContent extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
+                  // 底部元信息区域重构：放弃 Wrap 与硬编码宽度，改用 Row + Flexible，保证时间永不换行
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            PillTag(
-                              label: viewLabel,
-                              backgroundColor: viewColor.withValues(
-                                alpha: 0.14,
+                            Flexible(
+                              flex: 0,
+                              child: PillTag(
+                                label: viewLabel,
+                                backgroundColor: viewColor.withValues(
+                                  alpha: 0.14,
+                                ),
+                                foregroundColor: viewColor,
                               ),
-                              foregroundColor: viewColor,
                             ),
-                            if (categoryLabel.isNotEmpty)
-                              PillTag(
-                                label: categoryLabel,
-                                backgroundColor:
-                                    colorScheme.surfaceContainerHighest,
-                                foregroundColor: colorScheme.onSurfaceVariant,
+                            if (categoryLabel.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Flexible(
+                                flex: 0,
+                                child: PillTag(
+                                  label: categoryLabel,
+                                  backgroundColor:
+                                      colorScheme.surfaceContainerHighest,
+                                  foregroundColor: colorScheme.onSurfaceVariant,
+                                ),
                               ),
-                            if (showFeedTitle)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _FeedIcon(
-                                    imageUrl: article.feedImage,
-                                    size: 14,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 180,
-                                    ),
-                                    child: Text(
-                                      article.feedTitle,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: colorScheme.onSurfaceVariant
-                                            .withValues(alpha: 0.6),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
+                            ],
+                            if (showFeedTitle) ...[
+                              const SizedBox(width: 6),
+                              _FeedIcon(
+                                imageUrl: article.feedImage,
+                                size: 14,
                               ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                flex: 1, // 关键：利用弹性空间，自动在剩余空间内截断
+                                child: Text(
+                                  article.feedTitle,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.7),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -304,8 +373,14 @@ class _ArticleCardContent extends StatelessWidget {
     bool isTranslated,
     bool isPending,
   ) {
+    final colorScheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
+      showDragHandle: true, // 增加顶部的现代拖拽指示条
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return SafeArea(
           child: Column(
@@ -313,14 +388,18 @@ class _ArticleCardContent extends StatelessWidget {
             children: [
               ListTile(
                 leading: isPending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                    ? SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colorScheme.primary,
+                        ),
                       )
-                    : const Icon(Icons.language),
+                    : Icon(Icons.translate, color: colorScheme.primary),
                 title: Text(
                   isPending ? '翻译中...' : (isTranslated ? '重新翻译' : '翻译文章'),
+                  style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 enabled: !isPending,
                 onTap: isPending
@@ -332,14 +411,21 @@ class _ArticleCardContent extends StatelessWidget {
               ),
               if (isTranslated) ...[
                 ListTile(
-                  leading: const Icon(Icons.delete_outline),
-                  title: const Text('删除翻译'),
+                  leading: Icon(
+                    Icons.delete_outline,
+                    color: colorScheme.error,
+                  ),
+                  title: Text(
+                    '删除翻译',
+                    style: TextStyle(color: colorScheme.error),
+                  ),
                   onTap: () {
                     Navigator.pop(context);
                     TranslationService.deleteTranslation(article.entryId);
                   },
                 ),
               ],
+              const SizedBox(height: 8),
             ],
           ),
         );
@@ -381,13 +467,13 @@ class _FeedIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     if (imageUrl == null || imageUrl!.isEmpty) {
-      return Icon(Icons.rss_feed, size: size,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.6));
+      return Icon(Icons.rss_feed,
+          size: size, color: cs.onSurfaceVariant.withValues(alpha: 0.6));
     }
     final proxyUrl = ArticleImageService.toProxiedUrl(imageUrl);
     if (proxyUrl == null) {
-      return Icon(Icons.rss_feed, size: size,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.6));
+      return Icon(Icons.rss_feed,
+          size: size, color: cs.onSurfaceVariant.withValues(alpha: 0.6));
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(3),
@@ -396,9 +482,8 @@ class _FeedIcon extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            Icon(Icons.rss_feed, size: size,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+        errorBuilder: (context, error, stackTrace) => Icon(Icons.rss_feed,
+            size: size, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
       ),
     );
   }
