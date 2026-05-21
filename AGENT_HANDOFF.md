@@ -1375,7 +1375,68 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 - 扩展方式：新页面只需加 listener，不需要修改 tick 点
 - **计划升级 D 方案**：`tick(entryId, changeType)` 带变更类型，消费者省掉一次 `box.get`
 
-## 40. FeedDetail 已读筛选 + tick(entryId) 增量（2026-05-20）
+## 40. UI 全面美化（2026-05-21，手动修订）
+
+用户对所有页面进行了大量视觉打磨，涉及 13 个文件、+2456/-1148 行。
+
+### 配色体系重构
+
+- 移除 `DynamicColorBuilder`，`main.dart` 全面手写 `ColorScheme`（亮/暗各一套）
+- 用 `dart:ui` 的 `PlatformDispatcher` 监听系统亮暗切换，手动管理 `themeMode`
+- 状态栏设为全局透明，沉浸式体验
+- 亮色方案：冷白基底 `#F8F8F9` + 多层次 `surfaceContainer` 灰阶
+- 暗色方案：深灰 `#121212` 基底 + 多层次暗灰
+- accent 保持 `#F59E0B`（品牌橙）
+
+### 时间线过滤入口重设计
+
+- `_buildFilterBar` 从薄横条改为大圆角卡片：双层背景 + 圆形图标容器 + 双层文字（"AI 智能过滤" / "拦截了 N 篇… 去查看"）
+- 使用自定义骨架屏 `_LocalTimelineSkeleton` 替代转菊花
+- empty view 重排布局和文案
+
+### 文章详情页重构
+
+- `_MetadataSection`（来源 Chip）：图标 + 文字 + 箭头，圆角灰底可点击
+- 标题区：InkWell 带圆角反馈，点击打开原文（无额外图标）
+- `_ToolbarRow`：翻译/摘要芯片按钮紧凑排列，状态驱动（翻译中…/已译/翻译）
+- `_Chip` 组件：激活态 `primary(0.12)` + 主色文字，非激活态灰底
+- `_SummaryCard`：亮色用 `secondaryContainer(0.10)`，暗色用 `(0.15)`，极淡底色
+- 空正文状态：`article_outlined` 图标 + "在浏览器中查看原文" 链接
+
+### 文章卡片重设计
+
+- 搜索入口 `ArticleSearchDelegate`→`_SearchBar` 重构为独立搜索栏
+- `ArticleCard` 时间标签 `_buildTimeLabel` 重构
+- 翻译/摘要图标布局调整
+- AI 拒文标签（filterReason chip）样式统一
+
+### 图片组件打磨
+
+- `html_chunk_card.dart` 大量重构：inline image / video poster / 布局
+- `image_gallery_page.dart` 重写：滑动关闭、缩放交互
+
+### 订阅源页重构
+
+- `_CategorySection` / `_ViewSection` / `_FeedAvatar` 全面重排
+- 展开/折叠动画流畅度优化
+- 三层缩进视觉层级明确
+
+### FeedDetail 页重构
+
+- `_FeedDetailPage` → `FeedDetailController` 分离
+- 加载骨架、空状态、错误状态统一
+- 文章列表卡片与主时间线视觉完全对齐
+
+### 过滤审核页打磨
+
+- `FilterReviewPage` 拒绝原因、按钮、进度条重构
+- `Dismissible` 阈值调回 0.5（防误触）
+
+### 反馈系统重构
+
+- `feedback_toast.dart` 完全重写：Material 3 风格 SnackBar 替代旧 Toast
+
+## 41. FeedDetail 已读筛选 + tick(entryId) 增量（2026-05-20）
 
 - `ArticleStateNotifier.tick(entryId)` 替代无参 `tick()`，消费者改为增量更新单篇
 - FeedDetail `_refreshFromLocal`：`box.get(entryId)` 读单篇 → 更新/移除列表（O(1) 替代 O(5000)）
