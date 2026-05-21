@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
@@ -6,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../common/constants/constants.dart';
-import '../../common/widgets/loading_widget.dart';
 import '../../http/feed_http.dart';
 import '../../http/init.dart';
 import '../../models/article.dart';
@@ -407,166 +407,356 @@ class FeedDetailController extends GetxController {
   }
 }
 
-/// Feed 详情页
+/// Feed 详情页 (沉浸式重构版)
 class FeedDetailPage extends StatelessWidget {
   const FeedDetailPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(FeedDetailController());
+    final cs = Theme.of(context).colorScheme;
+
+    // 解析安全的头像链接
+    final safeImageUrl = controller.feedImage != null &&
+            controller.feedImage!.isNotEmpty
+        ? (ArticleImageService.toProxiedUrl(controller.feedImage) ??
+            controller.feedImage)
+        : null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (controller.feedImage != null &&
-                controller.feedImage!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image(
-                    image: CachedNetworkImageProvider(
-                      ArticleImageService.toProxiedUrl(
-                            controller.feedImage,
-                          ) ??
-                          controller.feedImage!,
+      body: RefreshIndicator(
+        onRefresh: controller.loadData,
+        color: cs.primary,
+        backgroundColor: cs.surfaceContainerHighest,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // ─── 杂志级沉浸式头部 ───
+            SliverAppBar(
+              expandedHeight: 220,
+              pinned: true,
+              stretch: true,
+              backgroundColor: cs.surface,
+              surfaceTintColor: cs.surfaceTint,
+              iconTheme: IconThemeData(color: cs.onSurface),
+              actionsIconTheme: IconThemeData(color: cs.onSurface),
+              flexibleSpace: FlexibleSpaceBar(
+                titlePadding: const EdgeInsets.only(left: 48, right: 48, bottom: 16),
+                centerTitle: true,
+                title: Obx(() {
+                  final unreadCount =
+                      controller.articles.where((a) => !a.isRead).length;
+                  return Text(
+                    unreadCount > 0
+                        ? '${controller.feedTitle} ($unreadCount)'
+                        : controller.feedTitle,
+                    style: TextStyle(
+                      color: cs.onSurface,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const SizedBox.shrink(),
-                  ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  );
+                }),
+                background: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // 1. 底层背景图：抓取源图片或者使用主题色填充
+                    if (safeImageUrl != null)
+                      CachedNetworkImage(
+                        imageUrl: safeImageUrl,
+                        fit: BoxFit.cover,
+                      )
+                    else
+                      Container(color: cs.primaryContainer),
+
+                    // 2. 极致的高斯模糊与表面色彩融合（Glassmorphism）
+                    // 既能保留原图的色彩分布，又绝对保证文字的对比度可读性
+                    BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                      child: Container(
+                        color: cs.surface.withValues(alpha: 0.85),
+                      ),
+                    ),
+
+                    // 3. 居中大头像展示区（向上滚动时会自动淡出）
+                    Positioned(
+                      top: MediaQuery.of(context).padding.top + kToolbarHeight + 10,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: cs.surface,
+                            border: Border.all(
+                              color: cs.primary.withValues(alpha: 0.15),
+                              width: 3,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                            image: safeImageUrl != null
+                                ? DecorationImage(
+                                    image: CachedNetworkImageProvider(safeImageUrl),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
+                          ),
+                          child: safeImageUrl == null
+                              ? Icon(Icons.rss_feed, size: 32, color: cs.primary)
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            Flexible(
-              child: Obx(() {
-                final unreadCount = controller.articles
-                    .where((a) => !a.isRead)
-                    .length;
-                return Text(
-                  unreadCount > 0
-                      ? '${controller.feedTitle} ($unreadCount)'
-                      : controller.feedTitle,
-                  overflow: TextOverflow.ellipsis,
-                );
-              }),
-            ),
-          ],
-        ),
-        scrolledUnderElevation: 1,
-        actions: [
-          // 已读筛选
-          Obx(() => PopupMenuButton<int>(
-            icon: Icon(
-              controller.readFilter.value == 0
-                  ? Icons.mark_email_unread_outlined
-                  : controller.readFilter.value == 1
-                      ? Icons.inbox
-                      : Icons.done_all,
-              size: 22,
-            ),
-            onSelected: (v) {
-              controller.readFilter.value = v;
-              controller._applyFilter();
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 0, child: Text('仅未读')),
-              const PopupMenuItem(value: 1, child: Text('全部')),
-              const PopupMenuItem(value: 2, child: Text('仅已读')),
-            ],
-          )),
-          // 自动翻译
-          if (controller.filterFeedId != null)
-            Obx(() {
-              final isEnabled = controller.isAutoTranslateEnabled.value;
-              return IconButton(
-                icon: Icon(
-                  isEnabled ? Icons.translate : Icons.translate_outlined,
-                  color: isEnabled ? Theme.of(context).primaryColor : null,
-                ),
-                tooltip: isEnabled ? '自动翻译已启用' : '启用自动翻译',
-                onPressed: () async {
-                  await FeedTranslationSettingsService.toggleAutoTranslate(
-                    controller.filterFeedId ?? '',
-                  );
-                  controller.refreshAutoTranslateStatus();
-                  AppFeedback.success(
-                    isEnabled ? '自动翻译已关闭' : '自动翻译已开启',
-                    '仅对当前订阅源生效',
-                  );
-                },
-              );
-            }),
-        ],
-      ),
-      body: Obx(() {
-        final state = controller.loadingState.value;
-
-        return switch (state) {
-          Loading() => const LoadingWidget(msg: '加载中...'),
-          LoadError(:final errMsg) => _ErrorView(
-            message: errMsg,
-            onRetry: controller.loadData,
-          ),
-          Success(:final response) when response.isEmpty => _EmptyView(
-            onRetry: controller.loadData,
-          ),
-          Success() => RefreshIndicator(
-            onRefresh: controller.loadData,
-            child: Obx(() {
-              final list = controller.articles;
-              if (list.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.inbox_outlined,
-                          size: 48,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant
-                              .withValues(alpha: 0.5)),
-                      const SizedBox(height: 12),
-                      Text(
-                        controller.readFilter.value == 2 ? '暂无已读文章' : '暂无未读文章',
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500),
+              actions: [
+                // 已读筛选
+                Obx(() => PopupMenuButton<int>(
+                      tooltip: '筛选文章状态',
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ],
-                  ),
-                );
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.only(top: 8, bottom: 32),
-                itemCount: list.length,
-                itemBuilder: (context, index) {
-                  final article = list[index];
-                return ArticleCard(
-                  article: article,
-                  showFeedTitle: true,
-                  onTap: () {
-                    Get.toNamed(
-                      Routes.article,
-                      arguments: {
-                        'article': article,
-                        'sequence': controller.articles.toList(),
-                        'index': index,
+                      icon: Icon(
+                        controller.readFilter.value == 0
+                            ? Icons.mark_email_unread_outlined
+                            : controller.readFilter.value == 1
+                                ? Icons.inbox
+                                : Icons.done_all,
+                        size: 22,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onSelected: (v) {
+                        controller.readFilter.value = v;
+                        controller._applyFilter();
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 0, child: Text('仅未读')),
+                        const PopupMenuItem(value: 1, child: Text('全部')),
+                        const PopupMenuItem(value: 2, child: Text('仅已读')),
+                      ],
+                    )),
+                // 自动翻译
+                if (controller.filterFeedId != null)
+                  Obx(() {
+                    final isEnabled = controller.isAutoTranslateEnabled.value;
+                    return IconButton(
+                      icon: Icon(
+                        isEnabled ? Icons.translate : Icons.translate_outlined,
+                        color: isEnabled ? cs.primary : cs.onSurfaceVariant,
+                      ),
+                      tooltip: isEnabled ? '自动翻译已启用' : '启用自动翻译',
+                      onPressed: () async {
+                        await FeedTranslationSettingsService.toggleAutoTranslate(
+                          controller.filterFeedId ?? '',
+                        );
+                        controller.refreshAutoTranslateStatus();
+                        AppFeedback.success(
+                          isEnabled ? '自动翻译已关闭' : '自动翻译已开启',
+                          '仅对当前订阅源生效',
+                        );
                       },
                     );
-                  },
-                );
-              },
-            );
-          }),
-        ),
+                  }),
+                const SizedBox(width: 8),
+              ],
+            ),
 
-        };
-      }),
+            // ─── 文章列表区域 ───
+            Obx(() {
+              final state = controller.loadingState.value;
+
+              return switch (state) {
+                Loading() => const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _FeedDetailSkeleton(),
+                  ),
+                LoadError(:final errMsg) => SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _ErrorView(
+                      message: errMsg,
+                      onRetry: controller.loadData,
+                    ),
+                  ),
+                Success(:final response) when response.isEmpty =>
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _EmptyView(
+                      onRetry: controller.loadData,
+                      readFilter: controller.readFilter.value,
+                    ),
+                  ),
+                Success() => Obx(() {
+                    final list = controller.articles;
+                    if (list.isEmpty) {
+                      return SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _EmptyView(
+                          onRetry: controller.loadData,
+                          readFilter: controller.readFilter.value,
+                        ),
+                      );
+                    }
+                    return SliverPadding(
+                      padding: EdgeInsets.only(
+                        top: 6,
+                        bottom: 16 + MediaQuery.of(context).padding.bottom,
+                      ),
+                      sliver: SliverList.builder(
+                        itemCount: list.length,
+                        itemBuilder: (context, index) {
+                          final article = list[index];
+                          return ArticleCard(
+                            article: article,
+                            showFeedTitle: true,
+                            onTap: () {
+                              Get.toNamed(
+                                Routes.article,
+                                arguments: {
+                                  'article': article,
+                                  'sequence': controller.articles.toList(),
+                                  'index': index,
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    );
+                  }),
+              };
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 优雅的局部状态视图 ───
+
+class _FeedDetailSkeleton extends StatefulWidget {
+  const _FeedDetailSkeleton();
+
+  @override
+  State<_FeedDetailSkeleton> createState() => _FeedDetailSkeletonState();
+}
+
+class _FeedDetailSkeletonState extends State<_FeedDetailSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _opacityAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _opacityAnim = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 6),
+      itemCount: 4,
+      itemBuilder: (context, index) {
+        return FadeTransition(
+          opacity: _opacityAnim,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: MediaQuery.of(context).size.width * 0.6,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          width: 64,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -582,20 +772,48 @@ class _ErrorView extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 48, color: colorScheme.error),
-            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.cloud_off_rounded, size: 48, color: colorScheme.error),
+            ),
+            const SizedBox(height: 24),
             Text(
-              message ?? '加载失败',
-              style: TextStyle(color: colorScheme.onSurface),
+              '数据加载异常',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message ?? '请检查网络连接后重试',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              FilledButton.tonal(onPressed: onRetry, child: const Text('重试')),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('重新加载'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
             ],
           ],
         ),
@@ -606,34 +824,63 @@ class _ErrorView extends StatelessWidget {
 
 class _EmptyView extends StatelessWidget {
   final VoidCallback? onRetry;
+  final int readFilter;
 
-  const _EmptyView({this.onRetry});
+  const _EmptyView({this.onRetry, required this.readFilter});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isUnread = readFilter == 0;
+    
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 64,
-              color: colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '该订阅源暂无未读文章',
-              style: TextStyle(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
-                fontSize: 16,
+            Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isUnread ? Icons.done_all_rounded : Icons.inbox_outlined,
+                size: 56,
+                color: colorScheme.primary,
               ),
             ),
+            const SizedBox(height: 24),
+            Text(
+              isUnread ? '全部读完啦' : '暂无文章',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isUnread ? '该订阅源暂无最新的未读文章\n你可以尝试下拉刷新获取最新内容' : '该分类下暂时没有符合条件的文章',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              FilledButton.tonal(onPressed: onRetry, child: const Text('刷新')),
+              const SizedBox(height: 32),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.sync, size: 18),
+                label: const Text('强制同步'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
             ],
           ],
         ),
