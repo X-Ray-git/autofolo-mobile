@@ -64,16 +64,18 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     _articles.value = all;
   }
 
+  // 恢复 (Keep)
   void _keep(ArticleModel article) {
     ArticleStateNotifier.tick(article.entryId);
     AutoFilterWorker.unReject(article.entryId);
-    AutoFilterWorker.unReject(article.entryId);
+    AutoFilterWorker.unReject(article.entryId); // 冗余调用以确保状态更新
     if (Get.isRegistered<TimelineController>()) {
       Get.find<TimelineController>().markAsUnreadLocal(article.entryId);
     }
     setState(() => _articles.removeWhere((a) => a.entryId == article.entryId));
   }
 
+  // 彻底拒绝 (Reject)
   void _reject(ArticleModel article) {
     // 标记已审核，防止重判
     LocalArticleDbService.upsertOne(ArticleModel(
@@ -116,8 +118,14 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    
     return Scaffold(
       appBar: AppBar(
+        scrolledUnderElevation: 1,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(0.5),
+          child: Divider(height: 0.5, thickness: 0.5),
+        ),
         title: Obx(() {
           final q = AutoFilterWorker.queuedCount.value;
           final p = AutoFilterWorker.processingCount.value;
@@ -127,19 +135,33 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('审核'),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    '判定中 ${q + p}',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: cs.primary,
-                        fontWeight: FontWeight.w600),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 10,
+                        height: 10,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: cs.onPrimaryContainer,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '判定中 ${q + p}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onPrimaryContainer,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -149,38 +171,21 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
         }),
         actions: [
           if (_articles.isNotEmpty)
-            TextButton(
-              onPressed: _rejectAll,
-              child: const Text('全部确认'),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilledButton.tonal(
+                onPressed: _rejectAll,
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                child: const Text('全部确认垃圾'),
+              ),
             ),
         ],
       ),
       body: Obx(() => _articles.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle_outline,
-                      size: 48, color: cs.onSurfaceVariant),
-                  const SizedBox(height: 12),
-                  Text('暂无待审核文章',
-                      style: TextStyle(color: cs.onSurfaceVariant)),
-                  Obx(() {
-                    final q = AutoFilterWorker.queuedCount.value;
-                    final p = AutoFilterWorker.processingCount.value;
-                    if (q > 0 || p > 0) {
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text('AI 判定中: $q 排队, $p 处理中',
-                            style: TextStyle(
-                                fontSize: 12, color: cs.onSurfaceVariant)),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  }),
-                ],
-              ),
-            )
+          ? _buildEmptyState(cs)
           : Column(
               children: [
                 // 进度条
@@ -191,71 +196,72 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
                   return LinearProgressIndicator(
                     value: p > 0 ? null : 0,
                     minHeight: 2,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
                   );
                 }),
                 Expanded(
                   child: ListView.builder(
+                    padding: EdgeInsets.only(
+                      top: 6,
+                      bottom: 16 + MediaQuery.of(context).padding.bottom,
+                    ),
                     itemCount: _articles.length,
                     itemBuilder: (context, index) {
                       final article = _articles[index];
                       return Dismissible(
                         key: ValueKey(article.entryId),
                         direction: DismissDirection.horizontal,
+                        dismissThresholds: const {
+                          DismissDirection.startToEnd: 0.35,
+                          DismissDirection.endToStart: 0.35,
+                        },
                         confirmDismiss: (direction) async {
                           if (direction == DismissDirection.startToEnd) {
-                            // 右滑 = 保留
+                            // 右滑 = 恢复 (Keep)
                             _keep(article);
                           } else {
-                            // 左滑 = 拒绝
+                            // 左滑 = 彻底拒绝 (Reject)
                             _reject(article);
                           }
-                          return false; // 手动管理移除
+                          return false; // 手动管理数组移除并利用 setState 刷新
                         },
-                        background: Container(
-                          color: Colors.green.withValues(alpha: 0.3),
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.only(left: 24),
-                          child: const Icon(Icons.undo, color: Colors.green),
-                        ),
-                        secondaryBackground: Container(
-                          color: Colors.grey.withValues(alpha: 0.3),
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 24),
-                          child: const Icon(Icons.delete_outline,
-                              color: Colors.grey),
-                        ),
-                        child: Column(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(0, 4, 0, 0),
-                              child: ArticleCard(
-                                article: article,
-                                showFeedTitle: true,
-                                onTap: () {
-                                  Get.toNamed(Routes.article, arguments: {
-                                    'article': article,
-                                    'sequence': _articles,
-                                    'index': index,
-                                  });
-                                },
-                              ),
+                        // 右滑背景（恢复文章）
+                        background: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              color: const Color(0xFF10B981), // 生机绿
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.only(left: 24),
+                              child: const Icon(Icons.restore_rounded, color: Colors.white, size: 28),
                             ),
-                            // 拒绝原因标签
-                            if (article.filterReason != null &&
-                                article.filterReason!.isNotEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.fromLTRB(
-                                    12, 0, 12, 8),
-                                child: Text(
-                                  'AI 判定: ${article.filterReason}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: cs.error,
-                                  ),
-                                ),
-                              ),
-                          ],
+                          ),
+                        ),
+                        // 左滑背景（彻底删除）
+                        secondaryBackground: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              color: cs.error, // 警告红
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 24),
+                              child: const Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 28),
+                            ),
+                          ),
+                        ),
+                        child: ArticleCard(
+                          article: article,
+                          showFeedTitle: true,
+                          onTap: () {
+                            Get.toNamed(Routes.article, arguments: {
+                              'article': article,
+                              'sequence': _articles,
+                              'index': index,
+                            });
+                          },
                         ),
                       );
                     },
@@ -264,6 +270,83 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
               ],
             ),
           ),
+    );
+  }
+
+  // 统一的优雅空状态
+  Widget _buildEmptyState(ColorScheme cs) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.shield_outlined,
+                size: 56,
+                color: cs.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              '非常清爽',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '当前没有待审核的垃圾文章\nAI 过滤系统正在默默守护你的阅读流',
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurfaceVariant,
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            Obx(() {
+              final q = AutoFilterWorker.queuedCount.value;
+              final p = AutoFilterWorker.processingCount.value;
+              if (q > 0 || p > 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '后台正在判定: $q 排队, $p 处理中',
+                          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            }),
+          ],
+        ),
+      ),
     );
   }
 }
