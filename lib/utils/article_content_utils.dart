@@ -1,9 +1,25 @@
+import 'dart:collection';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
 import '../services/article_image_service.dart';
 
 abstract final class ArticleContentUtils {
+  static const int _cacheMax = 200;
+  static final LinkedHashMap<String, String> _cache = LinkedHashMap();
+
+  /// 带缓存的 HTML 规范化，避免同一篇被翻译/摘要各解析一次
+  static String normalizeHtmlForEntry(String entryId, String rawHtml) {
+    final cached = _cache[entryId];
+    if (cached != null) return cached;
+    if (_cache.length >= _cacheMax) {
+      _cache.remove(_cache.keys.first);
+    }
+    final normalized = normalizeHtml(rawHtml);
+    _cache[entryId] = normalized;
+    return normalized;
+  }
+
   static const Set<String> _blockTags = {
     'p',
     'div',

@@ -73,6 +73,13 @@ abstract final class TranslationService {
   static const String _apiBase = 'https://api.deepseek.com';
   static const Duration _timeout = Duration(seconds: 300);
 
+  static final Dio _dio = Dio(BaseOptions(
+    baseUrl: _apiBase,
+    connectTimeout: _timeout,
+    receiveTimeout: _timeout,
+    sendTimeout: _timeout,
+  ));
+
   static final RxMap<String, TranslationRecord> _records =
       <String, TranslationRecord>{}.obs;
   static final Map<String, Future<TranslationRecord>> _inFlight = {};
@@ -186,7 +193,8 @@ abstract final class TranslationService {
           ),
     );
 
-    final htmlContent = ArticleContentUtils.normalizeHtml(
+    final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
+      article.entryId,
       article.content ?? '',
     );
     if (htmlContent.isEmpty) {
@@ -218,18 +226,8 @@ HTML：
 ''';
 
     try {
-      final dio = Dio(
-        BaseOptions(
-          baseUrl: _apiBase,
-          connectTimeout: _timeout,
-          receiveTimeout: _timeout,
-          sendTimeout: _timeout,
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
+      _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+      _dio.options.headers['Content-Type'] = 'application/json';
 
       final llmConfig = LlmConfig.loadTranslate();
       final requestBody = <String, dynamic>{
@@ -241,7 +239,7 @@ HTML：
         ...llmConfig.toRequestBody(),
       };
 
-      final response = await dio.post(
+      final response = await _dio.post(
         '/chat/completions',
         data: requestBody,
       );

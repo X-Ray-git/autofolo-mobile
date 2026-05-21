@@ -25,8 +25,32 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   void initState() {
     super.initState();
     _loadArticles();
-    // 每隔 2 秒检查是否有新结果
-    ever(AutoFilterWorker.doneCount, (_) => _checkNewArticles());
+    // 注册增量推送回调
+    AutoFilterWorker.onRejected = (entryId, title, reason) {
+      if (!mounted) return;
+      if (_seenIds.contains(entryId)) return;
+      _seenIds.add(entryId);
+      // 从 DB 或内存中获取完整 article
+      final raw = GStorage.articleDb.get(entryId);
+      if (raw is Map) {
+        final article = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
+        if (article.isRejectedByAi && !article.isRead) {
+          _articles.add(article);
+        }
+      }
+    };
+  }
+
+  @override
+  void deactivate() {
+    AutoFilterWorker.onRejected = null;
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
+    AutoFilterWorker.onRejected = null;
+    super.dispose();
   }
 
   void _loadArticles() {
@@ -37,18 +61,6 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
       _seenIds.add(a.entryId);
     }
     _articles.value = all;
-  }
-
-  void _checkNewArticles() {
-    final all = LocalArticleDbService.readAllArticles()
-        .where((a) => a.isRejectedByAi && !a.isRead)
-        .toList();
-    final newOnes = all.where((a) => !_seenIds.contains(a.entryId)).toList();
-    if (newOnes.isEmpty) return;
-    for (final a in newOnes) {
-      _seenIds.add(a.entryId);
-    }
-    _articles.addAll(newOnes);
   }
 
   void _keep(ArticleModel article) {

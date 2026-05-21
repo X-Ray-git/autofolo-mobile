@@ -67,6 +67,13 @@ abstract final class SummaryService {
   static const String _apiBase = 'https://api.deepseek.com';
   static const Duration _timeout = Duration(seconds: 300);
 
+  static final Dio _dio = Dio(BaseOptions(
+    baseUrl: _apiBase,
+    connectTimeout: _timeout,
+    receiveTimeout: _timeout,
+    sendTimeout: _timeout,
+  ));
+
   static final RxMap<String, SummaryRecord> _records =
       <String, SummaryRecord>{}.obs;
   static final Map<String, Future<SummaryRecord>> _inFlight = {};
@@ -156,7 +163,8 @@ abstract final class SummaryService {
           ),
     );
 
-    final htmlContent = ArticleContentUtils.normalizeHtml(
+    final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
+      article.entryId,
       article.content ?? '',
     );
     if (htmlContent.isEmpty) {
@@ -187,18 +195,8 @@ HTML：
 ''';
 
     try {
-      final dio = Dio(
-        BaseOptions(
-          baseUrl: _apiBase,
-          connectTimeout: _timeout,
-          receiveTimeout: _timeout,
-          sendTimeout: _timeout,
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
+      _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+      _dio.options.headers['Content-Type'] = 'application/json';
 
       final llmConfig = LlmConfig.loadSummary();
       final requestBody = <String, dynamic>{
@@ -210,7 +208,7 @@ HTML：
         ...llmConfig.toRequestBody(),
       };
 
-      final response = await dio.post(
+      final response = await _dio.post(
         '/chat/completions',
         data: requestBody,
       );

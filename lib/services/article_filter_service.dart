@@ -19,6 +19,13 @@ abstract final class ArticleFilterService {
   static const String _apiBase = 'https://api.deepseek.com';
   static const Duration _timeout = Duration(seconds: 120);
 
+  static final Dio _dio = Dio(BaseOptions(
+    baseUrl: _apiBase,
+    connectTimeout: _timeout,
+    receiveTimeout: _timeout,
+    sendTimeout: _timeout,
+  ));
+
   static String getApiKey() {
     return GStorage.setting.get('deepseek_api_key', defaultValue: '') as String;
   }
@@ -65,16 +72,8 @@ abstract final class ArticleFilterService {
         ? '来源频道ID: ${article.feedId}'
         : '';
 
-    final dio = Dio(BaseOptions(
-      baseUrl: _apiBase,
-      connectTimeout: _timeout,
-      receiveTimeout: _timeout,
-      sendTimeout: _timeout,
-      headers: {
-        'Authorization': 'Bearer $apiKey',
-        'Content-Type': 'application/json',
-      },
-    ));
+    _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+    _dio.options.headers['Content-Type'] = 'application/json';
 
     final config = LlmConfig.loadFilter();
     final requestBody = <String, dynamic>{
@@ -91,8 +90,7 @@ abstract final class ArticleFilterService {
       ...config.toRequestBody(),
     };
 
-    dio.options.baseUrl = _apiBase;
-    final response = await dio.post(
+    final response = await _dio.post(
       '/chat/completions',
       data: requestBody,
     );

@@ -23,6 +23,9 @@ abstract final class AutoFilterWorker {
   /// 已完成（含成功和失败）
   static final doneCount = 0.obs;
 
+  /// 增量回调：审核页在前台时直接推送被拒文章
+  static void Function(String entryId, String title, String reason)? onRejected;
+
   /// 排队文章 AI 过滤
   static void enqueue(ArticleModel article) {
     if (article.entryId.isEmpty) return;
@@ -112,7 +115,8 @@ abstract final class AutoFilterWorker {
           filterReviewed: article.filterReviewed,
         );
         LocalArticleDbService.upsertOne(updated);
-        // Rejected
+        // 增量推送：审核页在前台时直接追加
+        onRejected?.call(article.entryId, article.title, result.reason);
       } else {
         // AI 判定保留 → 标记已审核，避免重复入队
         if (article.filterReviewed) return;
