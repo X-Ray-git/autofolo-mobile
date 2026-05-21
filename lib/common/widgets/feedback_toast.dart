@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
@@ -27,11 +28,28 @@ abstract final class AppFeedback {
   }) {
     SmartDialog.showToast(
       '',
-      displayTime: const Duration(milliseconds: 1500),
-      alignment: Alignment.bottomCenter,
+      displayTime: const Duration(milliseconds: 2000),
+      alignment: Alignment.topCenter,
       clickMaskDismiss: false,
       usePenetrate: true,
       consumeEvent: false,
+      // 增加顺畅的位移与淡入淡出（Slide & Fade）组合动画
+      animationBuilder: (controller, child, animationParam) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.6), // 从上方滑入
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: controller,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          )),
+          child: FadeTransition(
+            opacity: controller,
+            child: child,
+          ),
+        );
+      },
       builder: (context) => _FeedbackToast(
         title: title,
         message: message,
@@ -57,99 +75,96 @@ class _FeedbackToast extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final (Color accent, Color background, Color foreground, IconData icon) =
-        switch (tone) {
-      FeedbackTone.info => (
-          cs.primary,
-          cs.primaryContainer,
-          cs.onPrimaryContainer,
-          Icons.info_outline,
-        ),
-      FeedbackTone.success => (
-          const Color(0xFF16A34A),
-          isDark
-              ? const Color(0xFF052E16)
-              : const Color(0xFFDCFCE7),
-          isDark ? const Color(0xFFBBF7D0) : const Color(0xFF166534),
-          Icons.check_circle_outline,
-        ),
-      FeedbackTone.warning => (
-          const Color(0xFFD97706),
-          isDark
-              ? const Color(0xFF451A03)
-              : const Color(0xFFFEF3C7),
-          isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
-          Icons.report_outlined,
-        ),
-      FeedbackTone.error => (
-          cs.error,
-          cs.errorContainer,
-          cs.onErrorContainer,
-          Icons.error_outline,
-        ),
+    // 分配各状态的专属色彩与圆润图标
+    final (Color accent, IconData icon) = switch (tone) {
+      FeedbackTone.info => (cs.primary, Icons.info_rounded),
+      FeedbackTone.success => (const Color(0xFF10B981), Icons.check_circle_rounded),
+      FeedbackTone.warning => (const Color(0xFFF59E0B), Icons.warning_rounded),
+      FeedbackTone.error => (cs.error, Icons.error_rounded),
     };
 
+    // 背景色：采用与当前亮度适配的半透明基色，以衬托毛玻璃效果
+    final bgColor = isDark
+        ? const Color(0xFF1C1C1E).withValues(alpha: 0.85)
+        : const Color(0xFFF9F9F9).withValues(alpha: 0.85);
+
+    final foreground = cs.onSurface;
+
     return SafeArea(
-      top: false,
+      bottom: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: const EdgeInsets.only(top: 12, left: 24, right: 24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: accent.withValues(alpha: 0.25)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(999), // 完美的胶囊状
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.25),
+                    width: 1,
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: Icon(icon, size: 20, color: accent),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: foreground,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.25,
-                            color: foreground.withValues(alpha: 0.85),
-                          ),
-                        ),
-                      ],
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 图标底座：带微弱透明度的强调色圆圈
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, size: 20, color: accent),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: foreground,
+                            ),
+                          ),
+                          if (message.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              message,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: foreground.withValues(alpha: 0.75),
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8), // 右侧流出呼吸空间
+                  ],
+                ),
               ),
             ),
           ),

@@ -123,7 +123,16 @@ class _SettingsPageState extends State<SettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: widget.showAppBar ? AppBar(title: const Text('设置')) : null,
+      appBar: widget.showAppBar
+          ? AppBar(
+              title: const Text('设置'),
+              scrolledUnderElevation: 1,
+              bottom: const PreferredSize(
+                preferredSize: Size.fromHeight(0.5),
+                child: Divider(height: 0.5, thickness: 0.5),
+              ),
+            )
+          : null,
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -576,11 +585,7 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
       child: ExpansionTile(
         title: Text(widget.title,
             style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text('模型: $_model  |  '
-            '思考: ${_thinking ? "开($_reasoningEffort)" : "关"}  |  '
-            'T: $_temperature  |  '
-            'max: $_maxTokens  |  '
-            '并发: $_concurrency'),
+        subtitle: Text('$_model  |  并发 $_concurrency'),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
