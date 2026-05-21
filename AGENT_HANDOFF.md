@@ -1358,3 +1358,18 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 
 - AppBar 标题显示未读计数（如 `量子位 (5)`）
 - `showFeedTitle` 始终为 true，去底部空白
+
+## 38. 性能优化 — 卡顿修复（2026-05-20）
+
+- **静态 Dio 实例**：翻译/摘要/过滤三个服务各用 `static final _dio`，不再每条请求 `new Dio(BaseOptions(...))`
+- **normalizeHtml 缓存**：`ArticleContentUtils.normalizeHtmlForEntry(entryId, html)` 用 LinkedHashMap 做 200 条 LRU 缓存，翻译和摘要各调一次但共享结果，同篇长文章不再 DOM 解析两遍
+- **审核页增量推送**：过滤 Worker 完成一篇后通过 `onRejected` 回调直接推送单篇到审核列表（O(1)），替代 `ever(doneCount)` 每完成一篇扫全库 5000 篇（O(5000)）
+- `onRejected` 回调仅在审核页可见时注册（`initState`/`deactivate`/`dispose`），后台不触发
+
+## 39. ArticleStateNotifier 全局状态通知（2026-05-20）
+
+- **新建** `lib/services/article_state_notifier.dart` — RxInt version 计数器
+- 所有文章状态变更点统一调 `ArticleStateNotifier.tick()`
+- 消费者页面用 `ever(version, ...)` 或 `Obx(() => version.value)` 感知刷新
+- 解决：订阅源三层计数 stale、FeedDetail 列表 stale、时间线过滤横幅 stale
+- 扩展方式：新页面只需加 listener，不需要修改 tick 点
