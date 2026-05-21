@@ -13,6 +13,7 @@ import '../../services/local_article_db_service.dart';
 import '../../services/read_sync_service.dart';
 import '../../services/translation_service.dart';
 import '../../services/summary_service.dart';
+import '../../services/article_state_notifier.dart';
 import '../../utils/article_content_utils.dart';
 import '../../utils/html_chunk_parser.dart';
 import '../../utils/security_utils.dart';
@@ -123,6 +124,7 @@ class ArticleController extends GetxController {
     final isInbox = article.category == 'inbox';
     ReadSyncService.enqueue(article.entryId, isInbox: isInbox);
     isRead.value = true;
+    ArticleStateNotifier.tick();
 
     final ok = await _retrySync(
       action: () => FeedHttp.markRead(

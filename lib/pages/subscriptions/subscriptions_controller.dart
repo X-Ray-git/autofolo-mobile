@@ -4,6 +4,7 @@ import '../../http/feed_http.dart';
 import '../../http/init.dart';
 import '../../models/feed.dart';
 import '../../services/account_service.dart';
+import '../../services/article_state_notifier.dart';
 import '../../services/content_cache_service.dart';
 import '../../services/local_article_db_service.dart';
 import '../../utils/source_taxonomy.dart';
@@ -43,6 +44,7 @@ class SubscriptionsController extends GetxController {
     super.onInit();
     refreshUnreadCounts();
     loadData();
+    ever(ArticleStateNotifier.version, (_) => refreshUnreadCounts());
   }
 
   Future<void> loadData() async {

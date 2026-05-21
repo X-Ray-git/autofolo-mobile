@@ -21,6 +21,7 @@ import '../../services/local_article_db_service.dart';
 import '../../services/auto_translation_worker.dart';
 import '../../services/auto_summary_worker.dart';
 import '../../services/auto_filter_worker.dart';
+import '../../services/article_state_notifier.dart';
 import '../../services/read_sync_service.dart';
 import '../../services/feed_translation_settings_service.dart';
 import '../../utils/storage.dart';
@@ -61,6 +62,15 @@ class FeedDetailController extends GetxController {
         'category:${filterCategory ?? 'view:${filterView ?? 'all'}'}';
     refreshAutoTranslateStatus();
     loadData();
+    ever(ArticleStateNotifier.version, (_) => _refreshFromLocal());
+  }
+
+  void _refreshFromLocal() {
+    final local = LocalArticleDbService.readAllArticles()
+        .where(_matchesScope)
+        .toList();
+    final kept = _mergeLocalReadState(local);
+    articles.value = kept.where((a) => !a.isRead).toList();
   }
 
   void refreshAutoTranslateStatus() {

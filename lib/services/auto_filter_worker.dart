@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../models/article.dart';
 import '../utils/storage.dart';
 import 'article_filter_service.dart';
+import 'article_state_notifier.dart';
 import 'llm_config.dart';
 import 'local_article_db_service.dart';
 
@@ -115,6 +116,7 @@ abstract final class AutoFilterWorker {
           filterReviewed: article.filterReviewed,
         );
         LocalArticleDbService.upsertOne(updated);
+        ArticleStateNotifier.tick();
         // 增量推送：审核页在前台时直接追加
         onRejected?.call(article.entryId, article.title, result.reason);
       } else {
@@ -157,5 +159,6 @@ abstract final class AutoFilterWorker {
     raw['filterReason'] = null;
     raw['filterReviewed'] = true;
     GStorage.articleDb.put(entryId, raw);
+    ArticleStateNotifier.tick();
   }
 }

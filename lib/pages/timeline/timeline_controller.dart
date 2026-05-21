@@ -15,6 +15,7 @@ import '../../services/local_article_db_service.dart';
 import '../../services/auto_translation_worker.dart';
 import '../../services/auto_summary_worker.dart';
 import '../../services/auto_filter_worker.dart';
+import '../../services/article_state_notifier.dart';
 import '../../services/read_sync_service.dart';
 import '../../utils/storage.dart';
 
@@ -278,6 +279,7 @@ class TimelineController extends GetxController {
     GStorage.readStatus.put(entryId, true);
     LocalArticleDbService.setReadState(entryId, true);
     _updateReadStateInMemory(entryId, true);
+    ArticleStateNotifier.tick();
   }
 
   void markAsUnreadLocal(String entryId) {

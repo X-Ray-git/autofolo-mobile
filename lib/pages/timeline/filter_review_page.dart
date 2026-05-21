@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../models/article.dart';
 import '../../router/app_pages.dart';
 import '../../services/auto_filter_worker.dart';
+import '../../services/article_state_notifier.dart';
 import '../../services/local_article_db_service.dart';
 import '../../services/read_sync_service.dart';
 import '../../utils/storage.dart';
@@ -64,6 +65,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   }
 
   void _keep(ArticleModel article) {
+    ArticleStateNotifier.tick();
     AutoFilterWorker.unReject(article.entryId);
     AutoFilterWorker.unReject(article.entryId);
     if (Get.isRegistered<TimelineController>()) {
@@ -101,6 +103,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     }
     ReadSyncService.enqueue(article.entryId,
         isInbox: article.category == 'inbox');
+    ArticleStateNotifier.tick();
     setState(() => _articles.removeWhere((a) => a.entryId == article.entryId));
   }
 

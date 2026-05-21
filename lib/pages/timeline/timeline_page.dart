@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../common/widgets/loading_widget.dart';
 import '../../http/init.dart';
 import '../../router/app_pages.dart';
+import '../../services/article_state_notifier.dart';
 import '../../services/local_article_db_service.dart';
 import '../widgets/article_card.dart';
 import 'timeline_controller.dart';
@@ -115,6 +116,7 @@ class _TimelinePageState extends State<TimelinePage> {
               await controller.loadFeedsThenArticles();
             },
             child: Obx(() {
+              ArticleStateNotifier.version.value; // 订阅变更通知
               final filterCount = LocalArticleDbService.readAllArticles()
                   .where((a) => a.isRejectedByAi && !a.isRead)
                   .length;
