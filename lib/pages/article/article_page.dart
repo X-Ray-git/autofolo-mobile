@@ -432,16 +432,35 @@ class ArticlePageView extends StatefulWidget {
 class _ArticlePageViewState extends State<ArticlePageView> {
   late final String _tag;
   late final ArticleController controller;
+  late final ScrollController _scrollController;
+  
+  // 1. 改为使用 ValueNotifier 以实现局部刷新
+  final ValueNotifier<double> _scrollProgress = ValueNotifier(0.0);
 
   @override
   void initState() {
     super.initState();
     _tag = widget.article.entryId;
     controller = Get.put(ArticleController(widget.article), tag: _tag);
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    if (maxScroll > 0) {
+      // 2. 移除 setState，直接更新 value
+      _scrollProgress.value = (currentScroll / maxScroll).clamp(0.0, 1.0);
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _scrollProgress.dispose(); // 记得释放 Notifier
     if (Get.isRegistered<ArticleController>(tag: _tag)) {
       Get.delete<ArticleController>(tag: _tag);
     }
@@ -455,16 +474,27 @@ class _ArticlePageViewState extends State<ArticlePageView> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.pageLabel == null ? '文章详情' : '文章详情 · ${widget.pageLabel}',
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.open_in_browser),
-            tooltip: '在浏览器中打开',
-            onPressed: controller.openInBrowser,
+        title: widget.pageLabel == null
+            ? const Text('文章详情')
+            : Text('第 ${widget.pageLabel} 篇'),
+        actions: const [],
+        // 3. 使用 ValueListenableBuilder 局部刷新进度条
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(2.0),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _scrollProgress,
+            builder: (context, progress, child) {
+              return progress > 0.0
+                  ? LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: Colors.transparent,
+                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                      minHeight: 2.0,
+                    )
+                  : const SizedBox(height: 2.0);
+            },
           ),
-        ],
+        ),
       ),
       floatingActionButton: Obx(() {
         final isRead = controller.isRead.value;
@@ -472,8 +502,7 @@ class _ArticlePageViewState extends State<ArticlePageView> {
         return Opacity(
           opacity: 0.85,
           child: FloatingActionButton(
-            onPressed: isUpdating
-                ? null
+            onPressed: isUpdating ? null
                 : (isRead ? controller.markAsUnread : controller.markAsRead),
             tooltip: isRead ? '恢复未读' : '标为已读',
             child: Icon(isRead ? Icons.undo : Icons.check),
@@ -481,6 +510,7 @@ class _ArticlePageViewState extends State<ArticlePageView> {
         );
       }),
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           // ─── 元数据区域 ──────────────────────
           SliverPadding(
@@ -489,12 +519,24 @@ class _ArticlePageViewState extends State<ArticlePageView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 标题
-                  Text(
-                    controller.article.title,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                  InkWell(
+                    onTap: controller.openInBrowser,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            controller.article.title,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -515,49 +557,14 @@ class _ArticlePageViewState extends State<ArticlePageView> {
 
                   const Divider(height: 24),
 
-                  // 翻译按钮
-                  _TranslateButton(controller: controller, cs: colorScheme),
-                  _ToggleTranslationButton(controller: controller),
-
-                  // 摘要按钮
-                  _SummaryButton(controller: controller),
+                  _ToolbarRow(controller: controller, cs: colorScheme),
                   _SummaryCard(controller: controller),
                 ],
               ),
             ),
           ),
 
-          // ─── 图片预加载（隐藏） ──────────────────
-          if (controller.imageUrls.isNotEmpty)
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 0,
-                child: Stack(
-                  children: [
-                    for (final url in controller.imageUrls)
-                      Positioned(
-                        left: -1,
-                        top: -1,
-                        child: SizedBox(
-                          width: 1,
-                          height: 1,
-                          child: CachedNetworkImage(
-                            imageUrl:
-                                ArticleImageService.toProxiedUrl(url) ?? url,
-                            httpHeaders: ArticleImageService.httpHeaders,
-                            cacheKey: 'v2_$url',
-                            fadeInDuration: Duration.zero,
-                            fadeOutDuration: Duration.zero,
-                            placeholder: (_, _) => const SizedBox.shrink(),
-                            errorWidget: (_, _, _) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+          // （已删除：高度为 0 的隐藏预加载栈代码）
 
           // ─── 正文区域：逐块渲染 ──────────────
           SliverPadding(
@@ -630,162 +637,96 @@ class _MetadataSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imageUrl = controller.article.feedImage;
-    return Row(
-      children: [
-        Text('来自: ',
-            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
-        if (imageUrl != null && imageUrl.isNotEmpty) ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: Image(
-              image: CachedNetworkImageProvider(
-                ArticleImageService.toProxiedUrl(imageUrl) ?? imageUrl,
-              ),
-              width: 16,
-              height: 16,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) =>
-                  const SizedBox.shrink(),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
-        Expanded(
-          child: InkWell(
-            onTap:
-                controller.article.feedId.isEmpty ? null : controller.openSource,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                controller.article.feedTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.primary,
-                  decoration: TextDecoration.underline,
-                  decorationColor: Theme.of(context).colorScheme.primary,
+    return InkWell(
+      onTap: controller.article.feedId.isEmpty ? null : controller.openSource,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (imageUrl != null && imageUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Image(
+                  image: CachedNetworkImageProvider(
+                    ArticleImageService.toProxiedUrl(imageUrl) ?? imageUrl,
+                  ),
+                  width: 16, height: 16, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Icon(Icons.rss_feed, size: 14, color: cs.onSurfaceVariant),
                 ),
               ),
             ),
-          ),
-        ),
-      ],
+          Flexible(child: Text(controller.article.feedTitle,
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant))),
+          const SizedBox(width: 6),
+          Icon(Icons.chevron_right, size: 14,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+        ]),
+      ),
     );
   }
 }
 
-class _TranslateButton extends StatelessWidget {
+class _ToolbarRow extends StatelessWidget {
   final ArticleController controller;
   final ColorScheme cs;
-  const _TranslateButton({required this.controller, required this.cs});
+  const _ToolbarRow({required this.controller, required this.cs});
 
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final record = TranslationService.recordOf(controller.article.entryId);
-      final isPending =
-          (record?.isPending ?? false) || controller.isTranslating.value;
-      final hasTranslation =
-          (record?.translatedContent?.trim().isNotEmpty ?? false) ||
-              controller.translationContent.value.trim().isNotEmpty;
+      final rec = TranslationService.recordOf(controller.article.entryId);
+      final isPending = (rec?.isPending ?? false) || controller.isTranslating.value;
+      final hasTranslation = controller.isTranslated.value;
+      final isSummarizing = controller.isSummarizing.value;
+      final hasSummary = controller.isSummarized.value;
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: SizedBox(
-          width: double.infinity,
-          height: 40,
-          child: FilledButton.tonalIcon(
-            onPressed: isPending ? null : controller.translateArticle,
-            icon: isPending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.language),
-            label: Text(
-              isPending
-                  ? '翻译中...'
-                  : (hasTranslation ? '重新翻译' : '翻译文章'),
-            ),
-          ),
-        ),
+        child: Row(children: [
+          _Chip(cs: cs, icon: controller.showTranslation.value ? Icons.translate : Icons.translate_outlined,
+            label: isPending ? '翻译…' : hasTranslation ? '已译' : '翻译',
+            active: controller.showTranslation.value || isPending,
+            onTap: isPending ? null : hasTranslation ? () => controller.showTranslation.toggle() : () => controller.translateArticle()),
+          const SizedBox(width: 8),
+          _Chip(cs: cs, icon: hasSummary ? Icons.summarize : Icons.summarize_outlined,
+            label: isSummarizing ? '摘要…' : hasSummary ? '已摘要' : '摘要',
+            active: hasSummary || isSummarizing,
+            onTap: isSummarizing ? null : () => controller.summarizeArticle()),
+        ]),
       );
     });
   }
 }
 
-class _ToggleTranslationButton extends StatelessWidget {
-  final ArticleController controller;
-  const _ToggleTranslationButton({required this.controller});
+class _Chip extends StatelessWidget {
+  final ColorScheme cs; final IconData icon; final String label;
+  final bool active; final VoidCallback? onTap;
+  const _Chip({required this.cs, required this.icon, required this.label,
+    required this.active, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final record = TranslationService.recordOf(controller.article.entryId);
-      final hasTranslation =
-          (record?.translatedContent?.trim().isNotEmpty ?? false) ||
-              controller.translationContent.value.trim().isNotEmpty;
-      if (!hasTranslation) return const SizedBox.shrink();
-      final showTranslation = controller.showTranslation.value;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: controller.toggleTranslationDisplay,
-            icon: Icon(
-              showTranslation ? Icons.visibility_off : Icons.visibility,
-              size: 18,
-            ),
-            label: Text(showTranslation ? '查看原文' : '查看译文'),
-          ),
-        ),
-      );
-    });
-  }
-}
-
-class _SummaryButton extends StatelessWidget {
-  final ArticleController controller;
-  const _SummaryButton({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      final record = SummaryService.recordOf(controller.article.entryId);
-      final isPending =
-          (record?.isPending ?? false) || controller.isSummarizing.value;
-      final hasSummary =
-          (record?.summaryText?.trim().isNotEmpty ?? false) ||
-              controller.summaryText.value.trim().isNotEmpty;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: SizedBox(
-          width: double.infinity,
-          height: 40,
-          child: FilledButton.tonalIcon(
-            onPressed: isPending ? null : controller.summarizeArticle,
-            icon: isPending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Color(0xFFD97706)),
-                    ),
-                  )
-                : const Icon(Icons.summarize),
-            label: Text(
-              isPending
-                  ? '摘要中...'
-                  : (hasSummary ? '重新生成摘要' : '生成摘要'),
-            ),
-          ),
-        ),
-      );
-    });
+    return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? cs.primary.withValues(alpha: 0.12) : cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 16, color: active ? cs.primary : cs.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500,
+              color: active ? cs.primary : cs.onSurfaceVariant)),
+        ]),
+      ),
+    );
   }
 }
 
@@ -805,23 +746,21 @@ class _SummaryCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFD97706).withValues(alpha: 0.1),
-            border: Border.all(
-              color: const Color(0xFFD97706).withValues(alpha: 0.3),
-            ),
+            color: Theme.of(context).brightness == Brightness.light
+                ? Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.10)
+                : Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(children: [
-                Icon(Icons.summarize, size: 16, color: Color(0xFFD97706)),
-                SizedBox(width: 8),
-                Text('文章摘要',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFD97706))),
+              Row(children: [
+                Icon(Icons.summarize, size: 16,
+                    color: Theme.of(context).colorScheme.secondary),
+                const SizedBox(width: 8),
+                Text('文章摘要', style: TextStyle(fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.secondary)),
               ]),
               const SizedBox(height: 8),
               Text(summary, style: const TextStyle(fontSize: 14, height: 1.5)),
