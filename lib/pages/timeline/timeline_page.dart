@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../common/widgets/loading_widget.dart';
+import '../../common/widgets/shimmer_card.dart'; // 保留引用以防外部依赖
 import '../../http/init.dart';
 import '../../router/app_pages.dart';
 import '../../services/article_state_notifier.dart';
@@ -69,22 +69,66 @@ class _TimelinePageState extends State<TimelinePage> {
   }
 
   Widget _buildFilterBar(int count) {
-    return InkWell(
-      onTap: () => Get.toNamed(Routes.filterReview),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Row(
-          children: [
-            const Icon(Icons.filter_alt_outlined,
-                size: 16, color: Color(0xFFF59E0B)),
-            const SizedBox(width: 6),
-            Text('AI 已过滤 $count 篇 · 查看',
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFFF59E0B))),
-            const Spacer(),
-            const Icon(Icons.chevron_right,
-                size: 16, color: Color(0xFFF59E0B)),
-          ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: InkWell(
+        onTap: () => Get.toNamed(Routes.filterReview),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.auto_awesome,
+                  size: 16,
+                  color: Color(0xFFD97706),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'AI 智能过滤',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFB45309),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '拦截了 $count 篇低质量或无关内容',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: const Color(0xFFB45309).withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: Color(0xFFD97706),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -100,13 +144,17 @@ class _TimelinePageState extends State<TimelinePage> {
                 child: const Text('时间线'),
               ),
               scrolledUnderElevation: 1,
+              bottom: const PreferredSize(
+                preferredSize: Size.fromHeight(0.5),
+                child: Divider(height: 0.5, thickness: 0.5),
+              ),
             )
           : null,
       body: Obx(() {
         final state = controller.loadingState.value;
 
         return switch (state) {
-          Loading() => const LoadingWidget(msg: '加载中...'),
+          Loading() => const _LocalTimelineSkeleton(), // 使用定制化的优雅骨架屏
           LoadError(:final errMsg) => _ErrorView(
             message: errMsg,
             onRetry: controller.loadFeedsThenArticles,
@@ -124,23 +172,26 @@ class _TimelinePageState extends State<TimelinePage> {
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: EdgeInsets.only(
-                        top: 40,
+                        top: 12,
                         bottom: 8 +
                             kBottomNavigationBarHeight +
                             MediaQuery.of(context).padding.bottom,
                       ),
                       children: [
                         _buildFilterBar(filterCount),
-                        _EmptyView(
-                          message: controller.emptyMessage,
-                          onRetry: controller.loadFeedsThenArticles,
+                        Padding(
+                          padding: const EdgeInsets.only(top: 64),
+                          child: _EmptyView(
+                            message: controller.emptyMessage,
+                            onRetry: controller.loadFeedsThenArticles,
+                          ),
                         ),
                       ],
                     )
                   : ListView.builder(
                       controller: _scrollController,
                       padding: EdgeInsets.only(
-                        top: 0,
+                        top: 6,
                         bottom: 8 +
                             kBottomNavigationBarHeight +
                             MediaQuery.of(context).padding.bottom,
@@ -155,7 +206,7 @@ class _TimelinePageState extends State<TimelinePage> {
                         final articleIndex = index - 1;
                         if (articleIndex == controller.articles.length) {
                           return const Padding(
-                            padding: EdgeInsets.all(16),
+                            padding: EdgeInsets.all(24),
                             child: Center(
                               child: SizedBox(
                                 width: 24,
@@ -192,6 +243,116 @@ class _TimelinePageState extends State<TimelinePage> {
   }
 }
 
+// ─── 优雅的加载骨架屏（与新版卡片像素级对齐） ───
+
+class _LocalTimelineSkeleton extends StatefulWidget {
+  const _LocalTimelineSkeleton();
+
+  @override
+  State<_LocalTimelineSkeleton> createState() => _LocalTimelineSkeletonState();
+}
+
+class _LocalTimelineSkeletonState extends State<_LocalTimelineSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _opacityAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _opacityAnim = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 6),
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return FadeTransition(
+          opacity: _opacityAnim,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title Lines
+                    _SkeletonBlock(width: double.infinity, height: 18),
+                    const SizedBox(height: 10),
+                    _SkeletonBlock(width: MediaQuery.of(context).size.width * 0.6, height: 18),
+                    const SizedBox(height: 20),
+                    // Bottom Metadata Row
+                    Row(
+                      children: [
+                        _SkeletonBlock(width: 48, height: 20, borderRadius: 10),
+                        const SizedBox(width: 8),
+                        _SkeletonBlock(width: 48, height: 20, borderRadius: 10),
+                        const Spacer(),
+                        _SkeletonBlock(width: 64, height: 14),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SkeletonBlock extends StatelessWidget {
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  const _SkeletonBlock({
+    required this.width,
+    required this.height,
+    this.borderRadius = 4,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(borderRadius),
+      ),
+    );
+  }
+}
+
+// ─── 优雅的错误页 ───
+
 class _ErrorView extends StatelessWidget {
   final String? message;
   final VoidCallback? onRetry;
@@ -203,20 +364,48 @@ class _ErrorView extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 48, color: colorScheme.error),
-            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.cloud_off_rounded, size: 48, color: colorScheme.error),
+            ),
+            const SizedBox(height: 24),
             Text(
-              message ?? '加载失败',
-              style: TextStyle(color: colorScheme.onSurface),
+              '数据加载异常',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message ?? '请检查网络连接后重试',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              FilledButton.tonal(onPressed: onRetry, child: const Text('重试')),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('重新加载'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
             ],
           ],
         ),
@@ -224,6 +413,8 @@ class _ErrorView extends StatelessWidget {
     );
   }
 }
+
+// ─── 优雅的空状态页 ───
 
 class _EmptyView extends StatelessWidget {
   final String? message;
@@ -236,26 +427,52 @@ class _EmptyView extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 64,
-              color: colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message ?? '暂无文章',
-              style: TextStyle(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
-                fontSize: 16,
+            Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.done_all_rounded,
+                size: 56,
+                color: colorScheme.primary,
               ),
             ),
+            const SizedBox(height: 24),
+            Text(
+              '一切就绪',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message ?? '当前没有未读的新文章\n您可以去订阅源发现更多内容',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              FilledButton.tonal(onPressed: onRetry, child: const Text('刷新')),
+              const SizedBox(height: 32),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.sync, size: 18),
+                label: const Text('强制同步'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
             ],
           ],
         ),
