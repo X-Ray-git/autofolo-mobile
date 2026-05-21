@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -27,23 +28,28 @@ class HtmlChunkCard extends StatelessWidget {
     final widget = _buildContent(context);
     if (widget == null) return const SizedBox.shrink();
 
+    // 1. 修复：精准使用隔离层，防止纯文本图层爆炸
+    final needsBoundary = chunk.type == HtmlChunkType.image || 
+                          chunk.type == HtmlChunkType.iframeVideo;
+
     return Padding(
       padding: _paddingForType,
-      child: RepaintBoundary(child: widget),
+      child: needsBoundary ? RepaintBoundary(child: widget) : widget,
     );
   }
 
+  // 优化垂直阅读节奏 (Vertical Rhythm)
   EdgeInsets get _paddingForType => switch (chunk.type) {
-    HtmlChunkType.heading => const EdgeInsets.only(top: 16, bottom: 4),
-    HtmlChunkType.paragraph => const EdgeInsets.only(bottom: 10),
-    HtmlChunkType.image => const EdgeInsets.symmetric(vertical: 8),
-    HtmlChunkType.codeBlock => const EdgeInsets.only(bottom: 12),
-    HtmlChunkType.blockquote => const EdgeInsets.only(bottom: 12),
-    HtmlChunkType.table => const EdgeInsets.only(bottom: 12),
-    HtmlChunkType.list => const EdgeInsets.only(bottom: 10),
-    HtmlChunkType.horizontalRule => const EdgeInsets.symmetric(vertical: 12),
-    HtmlChunkType.iframeVideo => const EdgeInsets.symmetric(vertical: 8),
-    HtmlChunkType.rawHtml => const EdgeInsets.only(bottom: 10),
+    HtmlChunkType.heading => const EdgeInsets.only(top: 24, bottom: 8),
+    HtmlChunkType.paragraph => const EdgeInsets.only(bottom: 14),
+    HtmlChunkType.image => const EdgeInsets.symmetric(vertical: 12),
+    HtmlChunkType.codeBlock => const EdgeInsets.only(bottom: 16),
+    HtmlChunkType.blockquote => const EdgeInsets.only(bottom: 16),
+    HtmlChunkType.table => const EdgeInsets.only(bottom: 16),
+    HtmlChunkType.list => const EdgeInsets.only(bottom: 14),
+    HtmlChunkType.horizontalRule => const EdgeInsets.symmetric(vertical: 16),
+    HtmlChunkType.iframeVideo => const EdgeInsets.symmetric(vertical: 12),
+    HtmlChunkType.rawHtml => const EdgeInsets.only(bottom: 14),
   };
 
   Widget? _buildContent(BuildContext context) {
@@ -133,8 +139,9 @@ class HtmlChunkCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -155,9 +162,14 @@ class HtmlChunkCard extends StatelessWidget {
 
   Widget _buildBlockquote(BuildContext context, ColorScheme cs) {
     return Container(
-      padding: const EdgeInsets.only(left: 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: cs.primary, width: 3)),
+        color: cs.primaryContainer.withValues(alpha: 0.25),
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(8),
+          bottomRight: Radius.circular(8),
+        ),
+        border: Border(left: BorderSide(color: cs.primary, width: 4)),
       ),
       child: Html(
         data: chunk.content,
@@ -165,7 +177,7 @@ class HtmlChunkCard extends StatelessWidget {
           'body': Style(
             fontSize: FontSize(15),
             lineHeight: const LineHeight(1.6),
-            color: cs.onSurface.withValues(alpha: 0.85),
+            color: cs.onSurfaceVariant,
             fontStyle: FontStyle.italic,
             margin: Margins.zero,
             padding: HtmlPaddings.zero,
@@ -190,12 +202,12 @@ class HtmlChunkCard extends StatelessWidget {
             fontSize: FontSize(14),
           ),
           'th': Style(
-            backgroundColor: cs.surfaceContainerHighest,
+            backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.6),
             fontWeight: FontWeight.w700,
-            padding: HtmlPaddings.symmetric(horizontal: 8, vertical: 4),
+            padding: HtmlPaddings.symmetric(horizontal: 10, vertical: 8),
           ),
           'td': Style(
-            padding: HtmlPaddings.symmetric(horizontal: 8, vertical: 4),
+            padding: HtmlPaddings.symmetric(horizontal: 10, vertical: 8),
           ),
         },
         extensions: [_imageExtension(context)],
@@ -294,7 +306,7 @@ class HtmlChunkCard extends StatelessWidget {
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: 400),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
           aspectRatio: aspectRatio,
           child: Stack(
@@ -306,7 +318,7 @@ class HtmlChunkCard extends StatelessWidget {
                   imageUrl: posterUrl,
                   httpHeaders: ArticleImageService.httpHeaders,
                   fit: BoxFit.cover,
-                  fadeInDuration: const Duration(milliseconds: 80),
+                  fadeInDuration: const Duration(milliseconds: 250),
                   fadeOutDuration: const Duration(milliseconds: 80),
                   placeholder: (context, url) =>
                       Container(color: cs.surfaceContainerHighest),
@@ -316,54 +328,90 @@ class HtmlChunkCard extends StatelessWidget {
               else
                 Container(color: cs.surfaceContainerHighest),
 
-              // 半透明遮罩 + 打开按钮
+              // 渐变暗角遮罩，提升整体质感，代替生硬的纯黑透明度
               Container(
-                color: Colors.black.withValues(alpha: 0.2),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.6),
+                    ],
+                    stops: const [0.6, 1.0],
+                  ),
+                ),
               ),
+              
+              // 居中毛玻璃按钮
               Center(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(48),
-                  onTap: () async {
-                    if (url != null && url.isNotEmpty) {
-                      final uri = Uri.tryParse(url);
-                      if (uri != null && await canLaunchUrl(uri)) {
-                        await launchUrl(uri,
-                            mode: LaunchMode.externalApplication);
-                      }
-                    }
-                  },
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: cs.primary.withValues(alpha: 0.85),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.language,
-                      size: 36,
-                      color: Colors.white,
+                child: ClipOval(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: InkWell(
+                      onTap: () async {
+                        if (url != null && url.isNotEmpty) {
+                          final uri = Uri.tryParse(url);
+                          if (uri != null && await canLaunchUrl(uri)) {
+                            await launchUrl(uri,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        }
+                      },
+                      child: Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer.withValues(alpha: 0.6),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: cs.onPrimaryContainer.withValues(alpha: 0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.language,
+                          size: 32,
+                          color: cs.onPrimaryContainer,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
 
-              // 标签
+              // 底部标签：毛玻璃药丸风格
               Positioned(
-                bottom: 8,
-                right: 8,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    '网页',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.white,
+                bottom: 12,
+                right: 12,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.open_in_new, size: 12, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            '外部网页',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -459,6 +507,7 @@ class HtmlChunkCard extends StatelessWidget {
   }
 }
 
+// 2. 修复：混入 AutomaticKeepAliveClientMixin 以保持状态存活
 class _ArticleInlineImage extends StatefulWidget {
   final String imageUrl;
   final double maxWidth;
@@ -482,11 +531,16 @@ class _ArticleInlineImage extends StatefulWidget {
   State<_ArticleInlineImage> createState() => _ArticleInlineImageState();
 }
 
-class _ArticleInlineImageState extends State<_ArticleInlineImage> {
+class _ArticleInlineImageState extends State<_ArticleInlineImage> with AutomaticKeepAliveClientMixin {
   int _retryCount = 0;
 
   @override
+  bool get wantKeepAlive => true; // 告诉 ListView 不要在滑出屏幕时销毁该组件
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须在首行调用 super.build(context)
+
     final cs = Theme.of(context).colorScheme;
     final dpr = MediaQuery.of(context).devicePixelRatio;
     final cacheWidth = (widget.maxWidth * dpr).round();
@@ -521,7 +575,7 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage> {
           : null,
       memCacheWidth: cacheWidth,
       maxWidthDiskCache: cacheWidth * 2,
-      fadeInDuration: const Duration(milliseconds: 80),
+      fadeInDuration: const Duration(milliseconds: 250),
       fadeOutDuration: const Duration(milliseconds: 80),
       placeholder: (context, url) => SizedBox(
         width: widget.maxWidth,
@@ -558,13 +612,8 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage> {
         borderRadius: BorderRadius.circular(10),
         child: Material(
           color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-          child: IntrinsicHeight(
-            child: Stack(
-              children: [
-                image,
-              ],
-            ),
-          ),
+          // 3. 修复：移除 IntrinsicHeight 和 Stack，直接返回 image
+          child: image,
         ),
       ),
     );
