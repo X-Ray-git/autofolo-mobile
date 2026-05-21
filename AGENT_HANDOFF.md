@@ -1373,3 +1373,12 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 - 消费者页面用 `ever(version, ...)` 或 `Obx(() => version.value)` 感知刷新
 - 解决：订阅源三层计数 stale、FeedDetail 列表 stale、时间线过滤横幅 stale
 - 扩展方式：新页面只需加 listener，不需要修改 tick 点
+- **计划升级 D 方案**：`tick(entryId, changeType)` 带变更类型，消费者省掉一次 `box.get`
+
+## 40. FeedDetail 已读筛选 + tick(entryId) 增量（2026-05-20）
+
+- `ArticleStateNotifier.tick(entryId)` 替代无参 `tick()`，消费者改为增量更新单篇
+- FeedDetail `_refreshFromLocal`：`box.get(entryId)` 读单篇 → 更新/移除列表（O(1) 替代 O(5000)）
+- 订阅源 `refreshUnreadCounts`：增量 ±1 计数；首屏仍全量
+- FeedDetail 新增 `readFilter`：仅未读/全部/仅已读三档，AppBar 弹出菜单切换
+- `allArticles` 单独存全量（含已读），`articles` 按 filter 派生

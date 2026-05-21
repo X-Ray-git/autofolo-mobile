@@ -116,7 +116,7 @@ abstract final class AutoFilterWorker {
           filterReviewed: article.filterReviewed,
         );
         LocalArticleDbService.upsertOne(updated);
-        ArticleStateNotifier.tick();
+        ArticleStateNotifier.tick(article.entryId);
         // 增量推送：审核页在前台时直接追加
         onRejected?.call(article.entryId, article.title, result.reason);
       } else {
@@ -159,6 +159,6 @@ abstract final class AutoFilterWorker {
     raw['filterReason'] = null;
     raw['filterReviewed'] = true;
     GStorage.articleDb.put(entryId, raw);
-    ArticleStateNotifier.tick();
+    ArticleStateNotifier.tick(entryId);
   }
 }

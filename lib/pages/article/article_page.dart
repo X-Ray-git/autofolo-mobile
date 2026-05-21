@@ -124,7 +124,7 @@ class ArticleController extends GetxController {
     final isInbox = article.category == 'inbox';
     ReadSyncService.enqueue(article.entryId, isInbox: isInbox);
     isRead.value = true;
-    ArticleStateNotifier.tick();
+    ArticleStateNotifier.tick(article.entryId);
 
     final ok = await _retrySync(
       action: () => FeedHttp.markRead(

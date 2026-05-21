@@ -2,12 +2,14 @@ import 'package:get/get.dart';
 
 import '../../http/feed_http.dart';
 import '../../http/init.dart';
+import '../../models/article.dart';
 import '../../models/feed.dart';
 import '../../services/account_service.dart';
 import '../../services/article_state_notifier.dart';
 import '../../services/content_cache_service.dart';
 import '../../services/local_article_db_service.dart';
 import '../../utils/source_taxonomy.dart';
+import '../../utils/storage.dart';
 
 class SourceCategoryNode {
   final String name;
@@ -108,6 +110,23 @@ class SubscriptionsController extends GetxController {
   final _unreadCounts = <String, int>{}.obs;
 
   void refreshUnreadCounts() {
+    final eid = ArticleStateNotifier.lastEntryId;
+    if (eid != null) {
+      // 增量：只更新单篇对应的 feedId 计数
+      final raw = GStorage.articleDb.get(eid);
+      if (raw is Map) {
+        final a = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
+        if (!a.isRead && a.feedId.isNotEmpty) {
+          _unreadCounts[a.feedId] = (_unreadCounts[a.feedId] ?? 0) + 1;
+        } else if (a.isRead && a.feedId.isNotEmpty) {
+          final prev = _unreadCounts[a.feedId] ?? 0;
+          if (prev > 0) _unreadCounts[a.feedId] = prev - 1;
+        }
+        _unreadCounts.refresh();
+      }
+      return;
+    }
+    // 全量（首屏）
     final all = LocalArticleDbService.readAllArticles();
     final counts = <String, int>{};
     for (final a in all) {

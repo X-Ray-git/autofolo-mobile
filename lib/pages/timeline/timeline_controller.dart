@@ -279,7 +279,7 @@ class TimelineController extends GetxController {
     GStorage.readStatus.put(entryId, true);
     LocalArticleDbService.setReadState(entryId, true);
     _updateReadStateInMemory(entryId, true);
-    ArticleStateNotifier.tick();
+    ArticleStateNotifier.tick(entryId);
   }
 
   void markAsUnreadLocal(String entryId) {

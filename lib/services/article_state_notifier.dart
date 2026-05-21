@@ -1,12 +1,16 @@
 import 'package:get/get.dart';
 
 /// 全局文章状态变更通知器。
-/// 任何地方改了文章状态（读/未读/过滤/捞回/拒绝），
-/// 调 [tick] 一次，所有监听页各自 Obx 感知刷新。
+/// 调用 [tick(entryId)] 通知所有监听页该文章状态已变。
 abstract final class ArticleStateNotifier {
   static final version = 0.obs;
+  static String? _lastEntryId;
 
-  static void tick() {
+  /// 最近的变更 entryId（消费者读完即清）
+  static String? get lastEntryId => _lastEntryId;
+
+  static void tick(String entryId) {
+    _lastEntryId = entryId;
     version.value++;
   }
 }

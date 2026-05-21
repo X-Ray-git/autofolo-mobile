@@ -65,7 +65,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   }
 
   void _keep(ArticleModel article) {
-    ArticleStateNotifier.tick();
+    ArticleStateNotifier.tick(article.entryId);
     AutoFilterWorker.unReject(article.entryId);
     AutoFilterWorker.unReject(article.entryId);
     if (Get.isRegistered<TimelineController>()) {
@@ -103,7 +103,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     }
     ReadSyncService.enqueue(article.entryId,
         isInbox: article.category == 'inbox');
-    ArticleStateNotifier.tick();
+    ArticleStateNotifier.tick(article.entryId);
     setState(() => _articles.removeWhere((a) => a.entryId == article.entryId));
   }
 

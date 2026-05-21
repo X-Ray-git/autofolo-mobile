@@ -44,6 +44,8 @@ class FeedDetailController extends GetxController {
 
   final articles = <ArticleModel>[].obs;
   final isAutoTranslateEnabled = false.obs;
+  final readFilter = 0.obs; // 0=未读, 1=全部, 2=已读
+  final allArticles = <ArticleModel>[].obs; // 全量（含已读）
 
   @override
   void onInit() {
@@ -65,12 +67,39 @@ class FeedDetailController extends GetxController {
     ever(ArticleStateNotifier.version, (_) => _refreshFromLocal());
   }
 
+  void _applyFilter() {
+    switch (readFilter.value) {
+      case 0: articles.value = allArticles.where((a) => !a.isRead).toList();
+      case 1: articles.value = allArticles.toList();
+      case 2: articles.value = allArticles.where((a) => a.isRead).toList();
+    }
+  }
+
   void _refreshFromLocal() {
-    final local = LocalArticleDbService.readAllArticles()
-        .where(_matchesScope)
-        .toList();
-    final kept = _mergeLocalReadState(local);
-    articles.value = kept.where((a) => !a.isRead).toList();
+    final eid = ArticleStateNotifier.lastEntryId;
+    if (eid == null) return;
+    // 增量：读单篇
+    final raw = GStorage.articleDb.get(eid);
+    if (raw is! Map) return;
+    final article = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
+    if (!_matchesScope(article)) return;
+
+    // 替换或移除列表中的该篇
+    final idx = articles.indexWhere((a) => a.entryId == eid);
+    if (article.isRead) {
+      if (idx >= 0) articles.removeAt(idx);
+    } else {
+      final merged = _mergeLocalReadState([article]).first;
+      // 同步更新 allArticles
+      final ai = allArticles.indexWhere((a) => a.entryId == eid);
+      if (ai >= 0) {
+        allArticles[ai] = merged;
+        allArticles.refresh();
+      } else {
+        allArticles.add(merged);
+      }
+      _applyFilter();
+    }
   }
 
   void refreshAutoTranslateStatus() {
@@ -190,6 +219,12 @@ class FeedDetailController extends GetxController {
     articles.value = merged;
     loadingState.value = Success(merged);
     ContentCacheService.saveFeedDetailArticles(_cacheScope, merged);
+    // allArticles 包含已读（供筛选用）
+    final all = LocalArticleDbService.readAllArticles()
+        .where(_matchesScope)
+        .toList();
+    allArticles.value = _mergeLocalReadState(all);
+    _applyFilter();
     unawaited(_refreshRecentReadWindow());
   }
 
@@ -423,6 +458,27 @@ class FeedDetailPage extends StatelessWidget {
         ),
         scrolledUnderElevation: 1,
         actions: [
+          // 已读筛选
+          Obx(() => PopupMenuButton<int>(
+            icon: Icon(
+              controller.readFilter.value == 0
+                  ? Icons.mark_email_unread_outlined
+                  : controller.readFilter.value == 1
+                      ? Icons.inbox
+                      : Icons.done_all,
+              size: 22,
+            ),
+            onSelected: (v) {
+              controller.readFilter.value = v;
+              controller._applyFilter();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 0, child: Text('仅未读')),
+              const PopupMenuItem(value: 1, child: Text('全部')),
+              const PopupMenuItem(value: 2, child: Text('仅已读')),
+            ],
+          )),
+          // 自动翻译
           if (controller.filterFeedId != null)
             Obx(() {
               final isEnabled = controller.isAutoTranslateEnabled.value;
@@ -458,13 +514,38 @@ class FeedDetailPage extends StatelessWidget {
           Success(:final response) when response.isEmpty => _EmptyView(
             onRetry: controller.loadData,
           ),
-          Success(:final response) => RefreshIndicator(
+          Success() => RefreshIndicator(
             onRefresh: controller.loadData,
-            child: ListView.builder(
-              padding: const EdgeInsets.only(top: 8, bottom: 32),
-              itemCount: response.length,
-              itemBuilder: (context, index) {
-                final article = response[index];
+            child: Obx(() {
+              final list = controller.articles;
+              if (list.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.inbox_outlined,
+                          size: 48,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.5)),
+                      const SizedBox(height: 12),
+                      Text(
+                        controller.readFilter.value == 2 ? '暂无已读文章' : '暂无未读文章',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.only(top: 8, bottom: 32),
+                itemCount: list.length,
+                itemBuilder: (context, index) {
+                  final article = list[index];
                 return ArticleCard(
                   article: article,
                   showFeedTitle: true,
@@ -480,8 +561,10 @@ class FeedDetailPage extends StatelessWidget {
                   },
                 );
               },
-            ),
-          ),
+            );
+          }),
+        ),
+
         };
       }),
     );
