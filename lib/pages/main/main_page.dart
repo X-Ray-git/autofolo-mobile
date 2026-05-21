@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -32,7 +33,10 @@ class _MainPageState extends State<MainPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      extendBody: true, // 核心：允许列表内容穿透到导航栏下方，配合毛玻璃效果
       appBar: AppBar(
         title: Obx(() => Text(_titles[_currentIndex.value])),
         scrolledUnderElevation: 1,
@@ -46,6 +50,9 @@ class _MainPageState extends State<MainPage> {
             final mode = controller.selectedMode.value;
             return PopupMenuButton<TimelineViewMode>(
               tooltip: '切换视图',
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               onSelected: controller.setViewMode,
               itemBuilder: (context) => [
                 PopupMenuItem(
@@ -65,10 +72,10 @@ class _MainPageState extends State<MainPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.tune, size: 20),
-                  const SizedBox(width: 2),
+                  const SizedBox(width: 4),
                   Text(
                     '${_modeLabel(mode)} ${_modeCount(controller, mode)}',
-                    style: const TextStyle(fontSize: 12),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -107,42 +114,69 @@ class _MainPageState extends State<MainPage> {
               }
             },
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Obx(
-        () => IndexedStack(index: _currentIndex.value, children: _pages),
+        // 使用自定义的淡入淡出堆叠组件替换生硬的 IndexedStack
+        () => _FadeIndexedStack(
+          index: _currentIndex.value,
+          children: _pages,
+        ),
       ),
-      bottomNavigationBar: Obx(() {
-        return NavigationBar(
-          selectedIndex: _currentIndex.value,
-          onDestinationSelected: _onDestinationSelected,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.article_outlined),
-              selectedIcon: Icon(Icons.article),
-              label: '时间线',
+      bottomNavigationBar: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+                  width: 0.5,
+                ),
+              ),
             ),
-            NavigationDestination(
-              icon: Icon(Icons.rss_feed_outlined),
-              selectedIcon: Icon(Icons.rss_feed),
-              label: '订阅源',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: '设置',
-            ),
-          ],
-        );
-      }),
+            child: Obx(() {
+              return NavigationBar(
+                elevation: 0,
+                backgroundColor: colorScheme.surface.withValues(alpha: 0.40),
+                indicatorColor: colorScheme.primary.withValues(alpha: 0.80),
+                indicatorShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                selectedIndex: _currentIndex.value,
+                onDestinationSelected: _onDestinationSelected,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.article_outlined),
+                    selectedIcon: Icon(Icons.article),
+                    label: '时间线',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.rss_feed_outlined),
+                    selectedIcon: Icon(Icons.rss_feed),
+                    label: '订阅源',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: '设置',
+                  ),
+                ],
+              );
+            }),
+          ),
+        ),
+      ),
     );
   }
 
   String _modeLabel(TimelineViewMode mode) => switch (mode) {
-    TimelineViewMode.unread => '未读',
-    TimelineViewMode.all => '全部',
-    TimelineViewMode.read => '已读',
-  };
+        TimelineViewMode.unread => '未读',
+        TimelineViewMode.all => '全部',
+        TimelineViewMode.read => '已读',
+      };
 
   int _modeCount(TimelineController controller, TimelineViewMode mode) =>
       switch (mode) {
@@ -169,5 +203,39 @@ class _MainPageState extends State<MainPage> {
     }
     _currentIndex.value = index;
     _lastTimelineNavTapAt = index == 0 ? now : null;
+  }
+}
+
+/// 优雅的淡入淡出堆叠组件 (FadeIndexedStack)
+/// 替代原生的 IndexedStack，解决页面切换生硬的问题，同时完美保留页面状态。
+class _FadeIndexedStack extends StatelessWidget {
+  final int index;
+  final List<Widget> children;
+  
+  const _FadeIndexedStack({
+    required this.index,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: List.generate(children.length, (i) {
+        final active = i == index;
+        return IgnorePointer(
+          ignoring: !active,
+          child: AnimatedOpacity(
+            opacity: active ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOutCubic,
+            child: TickerMode(
+              enabled: active, // 不活跃时暂停内部动画，节省性能
+              child: children[i],
+            ),
+          ),
+        );
+      }),
+    );
   }
 }
