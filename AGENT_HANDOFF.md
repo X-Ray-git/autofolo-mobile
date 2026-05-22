@@ -1386,7 +1386,7 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 - 状态栏设为全局透明，沉浸式体验
 - 亮色方案：冷白基底 `#F8F8F9` + 多层次 `surfaceContainer` 灰阶
 - 暗色方案：深灰 `#121212` 基底 + 多层次暗灰
-- accent 保持 `#F59E0B`（品牌橙）
+- accent 使用 `#FF5C00`（品牌鲜橙），亮暗两套共用同一主色
 
 ### 时间线过滤入口重设计
 
@@ -1458,20 +1458,6 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
   - 恪守“绝对不显示不准确近似数据”的设计准则，在 `TimelineController.loadData` 中保留了 `collectEntries` 的全量拉取机制，保证 UI 变化只分为“启动读本地旧缓存”与“后台全量同步完并最终更新”两个确定状态。
   - 增加了严格的 `hasError` 检测。当面临成百上千条未读文章导致网络极大概率超时的情况下，不会再假死无反应，而是会静默弹出“同步未完成，部分拉取失败”的提示，增强了应用的健壮性。
 
-## 42. 主页时间线重大交互与逻辑重构（2026-05-22）
-
-- **生命周期解耦**：将 `TimelineController` 的注入时机从 `TimelinePage` 提前至 `MainPage.initState`。彻底修复了由于 `AppBar` 过早构建导致“启动时未读胶囊被隐藏，切 Tab 才能出现”的严重错位 Bug。
-- **UI 重构（胶囊徽章）**：
-  - 将未读/全部状态胶囊从右侧移动至 `AppBar` 的 `leading` (左上角)，实现了左控制、中标题、右搜索的完美对称美学。
-  - 抛弃了 `PopupMenuButton` 粗糙的原生包裹，改用定制的 `Material` + `InkWell(borderRadius: 14)`，使点击产生的水波纹被完美“锁”在胶囊的圆角边缘内。
-- **响应式数字修复**：在 `MainPage` 的顶栏 `Obx` 中加入了强制的 `allArticles.length` 依赖追踪，修复了底层 `allArticles.value` 更新但上方未读数字却不跳动的 GetX 响应式盲区。
-- **顶部空档优化**：
-  - 在 `timeline_page.dart` 中，当拦截数量为 0 时，过滤提示条彻底返回 `SizedBox.shrink()` 而非带 Padding 的空框。
-  - 将 `ListView` 顶部的物理位移交由 `RefreshIndicator(edgeOffset: ...)` 处理，彻底消除了时间线滚动到顶部时巨大的死板空档。
-- **网络全量同步容错（严格坚持两段式状态）**：
-  - 增加了严格的 `hasError` 检测。当面临成百上千条未读文章导致网络极大概率超时的情况下，不会再假死无反应，而是会静默弹出“同步未完成，部分拉取失败”的提示，增强了应用的健壮性。
-
-## 43. 刷新圈反悔手势阻断优化（2026-05-22）
 
 - **问题背景**：在带有半透明 AppBar 的设计中，当下拉刷新圈（未松手）再反悔向上推时，底层的 `ClampingScrollPhysics` 默认允许向上的滚动偏移量作用于列表，导致文章列表跟随手指滑动，钻入 AppBar 背后产生不自然的视觉穿透。
 - **高阶边界拦截**：为了完美复刻 PiliPlus 中“刷新圈在屏幕上时列表完全冻结”的效果，引入了 `RefreshAwareScrollPhysics`。
@@ -1482,3 +1468,45 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
   - 扣除下来的正向越界位移（`overscroll`）顺势传递给 `RefreshIndicator`，完美驱动了圆圈的顺滑回缩。
 - **视觉配合**：
   - 同时移除了默认的边缘发光效果（`NoOverscrollIndicatorBehavior`），使得界面的操作反馈干净利落，达到指哪打哪的极佳手感。
+
+## 44. 最终打磨与 v1.0.0-beta1 发布（2026-05-23）
+
+### 导航栏玻璃质感调优
+
+- 底栏背景从 `surface(0.8)` 降至 `surface(0.40)`，瀑布流内容更多穿透
+- 选中态指示器从 `primary(0.15)` 提至 `primary(0.80)`，橙色标识更鲜明
+- 顶栏 + 底栏均使用 `BackdropFilter(blur: 16)` 实现 iOS 风格毛玻璃
+
+### 图片预加载性能修复
+
+- 预加载隐藏 Stack 的 `CachedNetworkImage` 加上 `memCacheWidth: 150` + `maxWidthDiskCache: 300`
+- 原因：不加约束时每张图片以原始分辨率解码（>2000px），20 张同时解码打爆主线程
+- 效果：预加载仅解码 150px 缩略图，CPU 开销降 ~90%
+
+### 文章详情页微调
+
+- 标题下方移除"查看网页原文"文字 + 图标，标题本身已可点击跳转
+- `_SummaryCard` 日间模式透明度从 `0.25` 降至 `0.10`，极淡底色改善可读性
+- FAB `AnimatedScale` 回退（效果太细微无法感知）
+- 审核页 `Dismissible` 阈值调整：`0.3` → `0.5`（防误触）
+
+### 时间线过滤入口
+
+- `_buildFilterBar` 移除 `if (count <= 0) return` 条件，入口始终可见
+- 审核页"AI 判定"标签移除（卡片自带原因显示，防止重复）
+
+### 分批提交与 v1.0.0-beta1
+
+10 个 commit 按模块拆分：
+1. `ColorScheme` 手写体系 + 移除 `DynamicColorBuilder`
+2. `_FadeIndexedStack` 页面切换 + 底栏毛玻璃
+3. 过滤入口卡片重设计 + 骨架屏
+4. 审核页进度条 + 拒绝标签 + Dismissible
+5. 文章页 `_ToolbarRow` + `_Chip` + 摘要卡 + 预加载 fix
+6. 内联图片淡入 + 图片画廊手势
+7. 文章卡片布局 + 搜索栏
+8. FeedDetail 控制器分离 + 骨架加载
+9. 订阅源三层缩进 + 动画打磨
+10. 设置页副标题 + FeedbackToast 重写
+
+Tag: `v1.0.0-beta1` — 功能完备（AI 过滤 + 翻译 + 摘要），橙色主题，全 UI 打磨。
