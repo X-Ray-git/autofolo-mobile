@@ -301,27 +301,6 @@ class _ArticleCardContent extends StatelessWidget {
                                 ),
                               ),
                             ],
-                            if (showFeedTitle) ...[
-                              const SizedBox(width: 6),
-                              _FeedIcon(
-                                imageUrl: article.feedImage,
-                                size: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                flex: 1, // 关键：利用弹性空间，自动在剩余空间内截断
-                                child: Text(
-                                  article.feedTitle,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: colorScheme.onSurfaceVariant
-                                        .withValues(alpha: 0.7),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ),
@@ -350,6 +329,31 @@ class _ArticleCardContent extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (showFeedTitle) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _FeedIcon(
+                          imageUrl: article.feedImage,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            article.feedTitle,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

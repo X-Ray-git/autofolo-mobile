@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -121,67 +122,56 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     
     return Scaffold(
       appBar: AppBar(
-        scrolledUnderElevation: 1,
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(0.5),
-          child: Divider(height: 0.5, thickness: 0.5),
+        centerTitle: true,
+        backgroundColor: cs.surface.withValues(alpha: 0.7),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(color: Colors.transparent),
+          ),
         ),
-        title: Obx(() {
-          final q = AutoFilterWorker.queuedCount.value;
-          final p = AutoFilterWorker.processingCount.value;
-          final hasActivity = q > 0 || p > 0;
-          if (hasActivity) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('审核'),
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 10,
-                        height: 10,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: cs.onPrimaryContainer,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '判定中 ${q + p}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: cs.onPrimaryContainer,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }
-          return Obx(() => Text('审核 (${_articles.length})'));
-        }),
+        title: const Text('垃圾拦截'),
         actions: [
-          if (_articles.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilledButton.tonal(
-                onPressed: _rejectAll,
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          Obx(() {
+            final q = AutoFilterWorker.queuedCount.value;
+            final p = AutoFilterWorker.processingCount.value;
+            if (q == 0 && p == 0) return const SizedBox.shrink();
+            
+            return Center(
+              child: Container(
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text('全部确认垃圾'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: cs.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '判定中 ${q + p}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onPrimaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            );
+          }),
         ],
       ),
       body: Obx(() => _articles.isEmpty

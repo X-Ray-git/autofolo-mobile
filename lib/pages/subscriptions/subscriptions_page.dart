@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../common/widgets/pill_tag.dart';
+import '../../common/widgets/refresh_indicator.dart' as custom_refresh;
+import '../../common/widgets/refresh_aware_scroll_physics.dart';
+import '../../common/widgets/no_overscroll_indicator_behavior.dart';
 import '../../http/init.dart';
 import '../../models/feed.dart';
 import '../../router/app_pages.dart';
@@ -21,6 +24,8 @@ class SubscriptionsPage extends StatefulWidget {
 class _SubscriptionsPageState extends State<SubscriptionsPage> {
   late final SubscriptionsController controller;
   final _searchController = TextEditingController();
+  final _refreshKey = GlobalKey<custom_refresh.RefreshIndicatorState>();
+  late final _refreshPhysics = RefreshAwareScrollPhysics(refreshKey: _refreshKey);
 
   @override
   void initState() {
@@ -39,73 +44,89 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     controller.refreshUnreadCounts();
     final cs = Theme.of(context).colorScheme;
 
-    return Column(
-      children: [
-        // 现代化的搜索栏
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: TextField(
-            controller: _searchController,
-            onChanged: controller.updateSearchQuery,
-            decoration: InputDecoration(
-              hintText: '搜索 view、分类或订阅源',
-              hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
-              prefixIcon: Icon(Icons.search_rounded, color: cs.primary),
-              filled: true,
-              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(999),
-                borderSide: BorderSide.none,
+    return Obx(() {
+      final state = controller.loadingState.value;
+
+      return custom_refresh.RefreshIndicator(
+        key: _refreshKey,
+        edgeOffset: MediaQuery.paddingOf(context).top,
+        displacement: 20,
+        onRefresh: controller.loadData,
+        color: cs.primary,
+        backgroundColor: cs.surfaceContainerHighest,
+        child: ScrollConfiguration(
+          behavior: const NoOverscrollIndicatorBehavior(),
+          child: CustomScrollView(
+            physics: _refreshPhysics,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.paddingOf(context).top + 8,
+                  16,
+                  8,
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: controller.updateSearchQuery,
+                  decoration: InputDecoration(
+                    hintText: '搜索 view、分类或订阅源',
+                    hintStyle:
+                        TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+                    prefixIcon: Icon(Icons.search_rounded, color: cs.primary),
+                    filled: true,
+                    fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(999),
+                      borderSide: BorderSide.none,
+                    ),
+                    suffixIcon: controller.searchQuery.value.isEmpty
+                        ? const SizedBox.shrink()
+                        : IconButton(
+                            tooltip: '清空',
+                            onPressed: () {
+                              _searchController.clear();
+                              controller.updateSearchQuery('');
+                            },
+                            icon: Icon(Icons.cancel, color: cs.onSurfaceVariant),
+                          ),
+                  ),
+                ),
               ),
-              suffixIcon: Obx(() {
-                return controller.searchQuery.value.isEmpty
-                    ? const SizedBox.shrink()
-                    : IconButton(
-                        tooltip: '清空',
-                        onPressed: () {
+            ),
+            switch (state) {
+              Loading() => const SliverFillRemaining(
+                  child: _SubscriptionsSkeleton(),
+                ),
+              LoadError(:final errMsg) => SliverFillRemaining(
+                  child: _ErrorView(
+                    message: errMsg,
+                    onRetry: controller.loadData,
+                  ),
+                ),
+              Success() => () {
+                  final filtered = controller.filteredNodes;
+                  if (filtered.isEmpty) {
+                    return SliverFillRemaining(
+                      child: _EmptyView(
+                        message: '没有找到匹配的订阅源\n请尝试更换搜索关键词',
+                        onClear: () {
                           _searchController.clear();
                           controller.updateSearchQuery('');
                         },
-                        icon: Icon(Icons.cancel, color: cs.onSurfaceVariant),
-                      );
-              }),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Obx(() {
-            final state = controller.loadingState.value;
-
-            return switch (state) {
-              Loading() => const _SubscriptionsSkeleton(),
-              LoadError(:final errMsg) => _ErrorView(
-                  message: errMsg,
-                  onRetry: controller.loadData,
-                ),
-              Success() => Builder(builder: (context) {
-                  final filtered = controller.filteredNodes;
-                  if (filtered.isEmpty) {
-                    return _EmptyView(
-                      message: '没有找到匹配的订阅源\n请尝试更换搜索关键词',
-                      onClear: () {
-                        _searchController.clear();
-                        controller.updateSearchQuery('');
-                      },
+                      ),
                     );
                   }
-                  return RefreshIndicator(
-                    onRefresh: controller.loadData,
-                    color: cs.primary,
-                    backgroundColor: cs.surfaceContainerHighest,
-                    child: ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: EdgeInsets.only(
-                        top: 8,
-                        bottom: 16 +
-                            kBottomNavigationBarHeight +
-                            MediaQuery.of(context).padding.bottom,
-                      ),
+                  return SliverPadding(
+                    padding: EdgeInsets.only(
+                      top: 8,
+                      bottom: 16 +
+                          kBottomNavigationBarHeight +
+                          MediaQuery.of(context).padding.bottom,
+                    ),
+                    sliver: SliverList.builder(
                       itemCount: filtered.length,
                       itemBuilder: (context, index) {
                         return _ViewSection(
@@ -117,12 +138,13 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                       },
                     ),
                   );
-                }),
-            };
-          }),
+                }(),
+            },
+          ],
         ),
-      ],
+      ),
     );
+    });
   }
 }
 

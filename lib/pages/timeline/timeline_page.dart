@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../common/widgets/shimmer_card.dart'; // 保留引用以防外部依赖
+import '../../common/widgets/refresh_indicator.dart' as custom_refresh;
+import '../../common/widgets/refresh_aware_scroll_physics.dart';
+import '../../common/widgets/no_overscroll_indicator_behavior.dart';
+
 import '../../http/init.dart';
 import '../../router/app_pages.dart';
 import '../../services/article_state_notifier.dart';
@@ -22,6 +25,8 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage> {
   late final TimelineController controller;
   final ScrollController _scrollController = ScrollController();
+  final _refreshKey = GlobalKey<custom_refresh.RefreshIndicatorState>();
+  late final _refreshPhysics = RefreshAwareScrollPhysics(refreshKey: _refreshKey);
   DateTime? _lastTapTime;
 
   @override
@@ -159,7 +164,10 @@ class _TimelinePageState extends State<TimelinePage> {
             message: errMsg,
             onRetry: controller.loadFeedsThenArticles,
           ),
-          Success() => RefreshIndicator(
+          Success() => custom_refresh.RefreshIndicator(
+            key: _refreshKey,
+            edgeOffset: MediaQuery.paddingOf(context).top,
+            displacement: 20,
             onRefresh: () async {
               await controller.loadFeedsThenArticles();
             },
@@ -168,11 +176,13 @@ class _TimelinePageState extends State<TimelinePage> {
               final filterCount = LocalArticleDbService.readAllArticles()
                   .where((a) => a.isRejectedByAi && !a.isRead)
                   .length;
-              return controller.articles.isEmpty
+              return ScrollConfiguration(
+                behavior: const NoOverscrollIndicatorBehavior(),
+                child: controller.articles.isEmpty
                   ? ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
+                      physics: _refreshPhysics,
                       padding: EdgeInsets.only(
-                        top: 12,
+                        top: MediaQuery.paddingOf(context).top,
                         bottom: 8 +
                             kBottomNavigationBarHeight +
                             MediaQuery.of(context).padding.bottom,
@@ -189,9 +199,10 @@ class _TimelinePageState extends State<TimelinePage> {
                       ],
                     )
                   : ListView.builder(
+                      physics: _refreshPhysics,
                       controller: _scrollController,
                       padding: EdgeInsets.only(
-                        top: 6,
+                        top: MediaQuery.paddingOf(context).top,
                         bottom: 8 +
                             kBottomNavigationBarHeight +
                             MediaQuery.of(context).padding.bottom,
@@ -234,7 +245,8 @@ class _TimelinePageState extends State<TimelinePage> {
                           },
                         );
                       },
-                    );
+                    ),
+              );
             }),
           ),
         };

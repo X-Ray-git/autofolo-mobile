@@ -1443,3 +1443,42 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 - 订阅源 `refreshUnreadCounts`：增量 ±1 计数；首屏仍全量
 - FeedDetail 新增 `readFilter`：仅未读/全部/仅已读三档，AppBar 弹出菜单切换
 - `allArticles` 单独存全量（含已读），`articles` 按 filter 派生
+
+## 42. 主页时间线重大交互与逻辑重构（2026-05-22）
+
+- **生命周期解耦**：将 `TimelineController` 的注入时机从 `TimelinePage` 提前至 `MainPage.initState`。彻底修复了由于 `AppBar` 过早构建导致“启动时未读胶囊被隐藏，切 Tab 才能出现”的严重错位 Bug。
+- **UI 重构（胶囊徽章）**：
+  - 将未读/全部状态胶囊从右侧移动至 `AppBar` 的 `leading` (左上角)，实现了左控制、中标题、右搜索的完美对称美学。
+  - 抛弃了 `PopupMenuButton` 粗糙的原生包裹，改用定制的 `Material` + `InkWell(borderRadius: 14)`，使点击产生的水波纹被完美“锁”在胶囊的圆角边缘内。
+- **响应式数字修复**：在 `MainPage` 的顶栏  中加入了强制的 `allArticles.length` 依赖追踪，修复了底层 `allArticles.value` 更新但上方未读数字却不跳动的 GetX 响应式盲区。
+- **顶部空档优化**：
+  - 在 `timeline_page.dart` 中，当拦截数量为 0 时，过滤提示条彻底返回 `SizedBox.shrink()` 而非带 Padding 的空框。
+  - 将 `ListView` 顶部的物理位移交由 `RefreshIndicator(edgeOffset: ...)` 处理，彻底消除了时间线滚动到顶部时巨大的死板空档。
+- **网络全量同步容错（严格坚持两段式状态）**：
+  - 恪守“绝对不显示不准确近似数据”的设计准则，在 `TimelineController.loadData` 中保留了 `collectEntries` 的全量拉取机制，保证 UI 变化只分为“启动读本地旧缓存”与“后台全量同步完并最终更新”两个确定状态。
+  - 增加了严格的 `hasError` 检测。当面临成百上千条未读文章导致网络极大概率超时的情况下，不会再假死无反应，而是会静默弹出“同步未完成，部分拉取失败”的提示，增强了应用的健壮性。
+
+## 42. 主页时间线重大交互与逻辑重构（2026-05-22）
+
+- **生命周期解耦**：将 `TimelineController` 的注入时机从 `TimelinePage` 提前至 `MainPage.initState`。彻底修复了由于 `AppBar` 过早构建导致“启动时未读胶囊被隐藏，切 Tab 才能出现”的严重错位 Bug。
+- **UI 重构（胶囊徽章）**：
+  - 将未读/全部状态胶囊从右侧移动至 `AppBar` 的 `leading` (左上角)，实现了左控制、中标题、右搜索的完美对称美学。
+  - 抛弃了 `PopupMenuButton` 粗糙的原生包裹，改用定制的 `Material` + `InkWell(borderRadius: 14)`，使点击产生的水波纹被完美“锁”在胶囊的圆角边缘内。
+- **响应式数字修复**：在 `MainPage` 的顶栏 `Obx` 中加入了强制的 `allArticles.length` 依赖追踪，修复了底层 `allArticles.value` 更新但上方未读数字却不跳动的 GetX 响应式盲区。
+- **顶部空档优化**：
+  - 在 `timeline_page.dart` 中，当拦截数量为 0 时，过滤提示条彻底返回 `SizedBox.shrink()` 而非带 Padding 的空框。
+  - 将 `ListView` 顶部的物理位移交由 `RefreshIndicator(edgeOffset: ...)` 处理，彻底消除了时间线滚动到顶部时巨大的死板空档。
+- **网络全量同步容错（严格坚持两段式状态）**：
+  - 增加了严格的 `hasError` 检测。当面临成百上千条未读文章导致网络极大概率超时的情况下，不会再假死无反应，而是会静默弹出“同步未完成，部分拉取失败”的提示，增强了应用的健壮性。
+
+## 43. 刷新圈反悔手势阻断优化（2026-05-22）
+
+- **问题背景**：在带有半透明 AppBar 的设计中，当下拉刷新圈（未松手）再反悔向上推时，底层的 `ClampingScrollPhysics` 默认允许向上的滚动偏移量作用于列表，导致文章列表跟随手指滑动，钻入 AppBar 背后产生不自然的视觉穿透。
+- **高阶边界拦截**：为了完美复刻 PiliPlus 中“刷新圈在屏幕上时列表完全冻结”的效果，引入了 `RefreshAwareScrollPhysics`。
+  - 该方案彻底摒弃了在 `applyPhysicsToUserOffset` 阶段拦截（因其会导致 Flutter 底层计算出符号相反的 `overscroll` 进而让刷新圈死锁）。
+  - 改为在最终边界判定 `applyBoundaryConditions` 阶段实施降维拦截：在 `dragOffset > 0` 的前提下，当发现用户尝试正向滚动（`value > pixels` 且位于顶部边界）时，强行将这部分合法的滚动量判决为越界（overscroll）。
+- **联动效果**：
+  - 判定越界使得列表本身的 `pixels` 被完美冻结在 `0`，纹丝不动。
+  - 扣除下来的正向越界位移（`overscroll`）顺势传递给 `RefreshIndicator`，完美驱动了圆圈的顺滑回缩。
+- **视觉配合**：
+  - 同时移除了默认的边缘发光效果（`NoOverscrollIndicatorBehavior`），使得界面的操作反馈干净利落，达到指哪打哪的极佳手感。

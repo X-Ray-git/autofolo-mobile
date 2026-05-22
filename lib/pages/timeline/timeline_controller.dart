@@ -18,6 +18,7 @@ import '../../services/auto_filter_worker.dart';
 import '../../services/article_state_notifier.dart';
 import '../../services/read_sync_service.dart';
 import '../../utils/storage.dart';
+import '../subscriptions/subscriptions_controller.dart';
 
 enum TimelineViewMode { unread, all, read }
 
@@ -109,27 +110,41 @@ class TimelineController extends GetxController {
     );
 
     final unreadData = <ArticleModel>[];
+    bool hasError = false;
+
     if (feedsResult is Success<List<ArticleModel>>) {
       unreadData.addAll(feedsResult.response);
     } else if (feedsResult is LoadError<List<ArticleModel>>) {
-      if (allArticles.isEmpty) {
-        loadingState.value = feedsResult;
-      }
-      return;
+      hasError = true;
+      if (allArticles.isEmpty) loadingState.value = feedsResult;
     }
 
     if (socialResult is Success<List<ArticleModel>>) {
       unreadData.addAll(socialResult.response);
+    } else if (socialResult is LoadError<List<ArticleModel>>) {
+      hasError = true;
     }
 
     if (inboxResult is Success<List<ArticleModel>>) {
       unreadData.addAll(inboxResult.response);
+    } else if (inboxResult is LoadError<List<ArticleModel>>) {
+      hasError = true;
     }
 
-    _applyUnreadSnapshot(unreadData);
-    _loadFromLocalDatabase();
+    if (hasError && allArticles.isNotEmpty) {
+      AppFeedback.error('同步未完成', '部分未读数据拉取失败，请稍后重试');
+    }
+
+    if (unreadData.isNotEmpty || !hasError) {
+      _applyUnreadSnapshot(unreadData);
+      _loadFromLocalDatabase();
+    }
 
     loadingState.value = Success(articles.toList());
+    // 全量同步完成后，强制通知订阅列表做全量重新计数
+    if (Get.isRegistered<SubscriptionsController>()) {
+      Get.find<SubscriptionsController>().refreshUnreadCounts();
+    }
     unawaited(_refreshRecentReadWindow());
   }
 

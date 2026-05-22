@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -123,18 +124,29 @@ class _SettingsPageState extends State<SettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: widget.showAppBar
           ? AppBar(
               title: const Text('设置'),
-              scrolledUnderElevation: 1,
-              bottom: const PreferredSize(
-                preferredSize: Size.fromHeight(0.5),
-                child: Divider(height: 0.5, thickness: 0.5),
+              centerTitle: true,
+              backgroundColor: colorScheme.surface.withValues(alpha: 0.7),
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              flexibleSpace: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(color: Colors.transparent),
+                ),
               ),
             )
           : null,
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + 8,
+          16,
+          MediaQuery.paddingOf(context).bottom + kBottomNavigationBarHeight + 32,
+        ),
         children: [
           // 登录状态
           Obx(

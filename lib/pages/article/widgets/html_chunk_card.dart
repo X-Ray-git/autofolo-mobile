@@ -563,36 +563,39 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage> with Automatic
       _retryCount,
     );
 
-    Widget image = CachedNetworkImage(
-      imageUrl: imageUrl,
-      cacheKey: 'v2_$imageUrl',
-      httpHeaders: ArticleImageService.httpHeaders,
-      fit: BoxFit.contain,
-      width: widget.maxWidth,
-      // 有可靠尺寸时用 AspectRatio 精确控制；否则不设 height，自适应
-      height: hasRealDimensions
-          ? (widget.maxWidth / aspectRatio!).clamp(40.0, 420.0)
-          : null,
-      memCacheWidth: cacheWidth,
-      maxWidthDiskCache: cacheWidth * 2,
-      fadeInDuration: const Duration(milliseconds: 250),
-      fadeOutDuration: const Duration(milliseconds: 80),
-      placeholder: (context, url) => SizedBox(
+    Widget image = Hero(
+      tag: widget.imageUrl,
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        cacheKey: 'v2_$imageUrl',
+        httpHeaders: ArticleImageService.httpHeaders,
+        fit: BoxFit.contain,
         width: widget.maxWidth,
+        // 有可靠尺寸时用 AspectRatio 精确控制；否则不设 height，自适应
         height: hasRealDimensions
             ? (widget.maxWidth / aspectRatio!).clamp(40.0, 420.0)
-            : (isCutOff ? 220.0 : 100.0),
-        child: const Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            : null,
+        memCacheWidth: cacheWidth,
+        maxWidthDiskCache: cacheWidth * 2,
+        fadeInDuration: const Duration(milliseconds: 250),
+        fadeOutDuration: const Duration(milliseconds: 80),
+        placeholder: (context, url) => SizedBox(
+          width: widget.maxWidth,
+          height: hasRealDimensions
+              ? (widget.maxWidth / aspectRatio!).clamp(40.0, 420.0)
+              : (isCutOff ? 220.0 : 100.0),
+          child: const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
           ),
         ),
-      ),
-      errorWidget: (context, url, error) => _ImageErrorWidget(
-        cs: cs,
-        onRetry: () => setState(() => _retryCount++),
+        errorWidget: (context, url, error) => _ImageErrorWidget(
+          cs: cs,
+          onRetry: () => setState(() => _retryCount++),
+        ),
       ),
     );
 

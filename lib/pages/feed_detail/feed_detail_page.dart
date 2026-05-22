@@ -14,6 +14,7 @@ import '../../models/feed.dart';
 import '../../router/app_pages.dart';
 import '../../utils/source_taxonomy.dart';
 import '../../common/widgets/feedback_toast.dart';
+import '../../common/widgets/refresh_indicator.dart' as custom_refresh;
 import '../../services/account_service.dart';
 import '../../services/article_image_service.dart';
 import '../../services/content_cache_service.dart';
@@ -27,6 +28,7 @@ import '../../services/feed_translation_settings_service.dart';
 import '../../utils/storage.dart';
 import '../widgets/article_card.dart';
 import '../timeline/timeline_controller.dart';
+import '../subscriptions/subscriptions_controller.dart';
 
 /// Feed 详情控制器 — 按订阅源或分类或 view 筛选文章
 class FeedDetailController extends GetxController {
@@ -69,9 +71,12 @@ class FeedDetailController extends GetxController {
 
   void _applyFilter() {
     switch (readFilter.value) {
-      case 0: articles.value = allArticles.where((a) => !a.isRead).toList();
-      case 1: articles.value = allArticles.toList();
-      case 2: articles.value = allArticles.where((a) => a.isRead).toList();
+      case 0:
+        articles.value = allArticles.where((a) => !a.isRead && !a.isRejectedByAi).toList();
+      case 1:
+        articles.value = allArticles.where((a) => !a.isRejectedByAi).toList();
+      case 2:
+        articles.value = allArticles.where((a) => a.isRead && !a.isRejectedByAi).toList();
     }
   }
 
@@ -134,11 +139,12 @@ class FeedDetailController extends GetxController {
     final cachedArticles = ContentCacheService.readFeedDetailArticles(
       _cacheScope,
     );
-    if (cachedArticles.isNotEmpty) {
+    if (!hasInitialContent && cachedArticles.isNotEmpty) {
       final mergedCached = _mergeLocalReadState(cachedArticles);
-      articles.value = mergedCached;
-      loadingState.value = Success(mergedCached);
-    } else if (!hasInitialContent) {
+      allArticles.value = mergedCached;
+      _applyFilter();
+      loadingState.value = Success(articles.toList());
+    } else if (!hasInitialContent && cachedArticles.isEmpty) {
       if (_hasAnyLocalScopeData() || _isTimelineSnapshotReady()) {
         articles.clear();
         loadingState.value = const Success(<ArticleModel>[]);
@@ -225,6 +231,10 @@ class FeedDetailController extends GetxController {
         .toList();
     allArticles.value = _mergeLocalReadState(all);
     _applyFilter();
+    // 全量同步完成后，强制通知订阅列表做全量重新计数，保证数字一致
+    if (Get.isRegistered<SubscriptionsController>()) {
+      Get.find<SubscriptionsController>().refreshUnreadCounts();
+    }
     unawaited(_refreshRecentReadWindow());
   }
 
@@ -297,6 +307,9 @@ class FeedDetailController extends GetxController {
       GStorage.readStatus.put(local.entryId, true);
       LocalArticleDbService.setReadState(local.entryId, true);
     }
+
+    // UPSERT NEW ARTICLES
+    LocalArticleDbService.upsertMany(unreadData, defaultReadState: false);
 
     // API 返回未读 → 清除本地旧已读标记
     for (final article in unreadData) {
@@ -424,7 +437,8 @@ class FeedDetailPage extends StatelessWidget {
         : null;
 
     return Scaffold(
-      body: RefreshIndicator(
+      body: custom_refresh.RefreshIndicator(
+        displacement: MediaQuery.paddingOf(context).top + kToolbarHeight + 10,
         onRefresh: controller.loadData,
         color: cs.primary,
         backgroundColor: cs.surfaceContainerHighest,
@@ -436,90 +450,124 @@ class FeedDetailPage extends StatelessWidget {
               expandedHeight: 220,
               pinned: true,
               stretch: true,
-              backgroundColor: cs.surface,
-              surfaceTintColor: cs.surfaceTint,
+              backgroundColor: Colors.transparent, // 必须透明，靠内部的 BackdropFilter 呈现毛玻璃
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
               iconTheme: IconThemeData(color: cs.onSurface),
               actionsIconTheme: IconThemeData(color: cs.onSurface),
-              flexibleSpace: FlexibleSpaceBar(
-                titlePadding: const EdgeInsets.only(left: 48, right: 48, bottom: 16),
-                centerTitle: true,
-                title: Obx(() {
-                  final unreadCount =
-                      controller.articles.where((a) => !a.isRead).length;
-                  return Text(
-                    unreadCount > 0
-                        ? '${controller.feedTitle} ($unreadCount)'
-                        : controller.feedTitle,
-                    style: TextStyle(
-                      color: cs.onSurface,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  );
-                }),
-                background: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // 1. 底层背景图：抓取源图片或者使用主题色填充
-                    if (safeImageUrl != null)
-                      CachedNetworkImage(
-                        imageUrl: safeImageUrl,
-                        fit: BoxFit.cover,
-                      )
-                    else
-                      Container(color: cs.primaryContainer),
-
-                    // 2. 极致的高斯模糊与表面色彩融合（Glassmorphism）
-                    // 既能保留原图的色彩分布，又绝对保证文字的对比度可读性
-                    BackdropFilter(
+              flexibleSpace: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Persistent Glassmorphism Base
+                  ClipRect(
+                    child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                       child: Container(
                         color: cs.surface.withValues(alpha: 0.85),
                       ),
                     ),
+                  ),
+                  FlexibleSpaceBar(
+                    titlePadding: const EdgeInsets.only(left: 48, right: 48, bottom: 16),
+                    centerTitle: true,
+                    title: Text(
+                      controller.feedTitle,
+                      style: TextStyle(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    background: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // 1. 底层背景图：抓取源图片或者使用主题色填充
+                        if (safeImageUrl != null)
+                          CachedNetworkImage(
+                            imageUrl: safeImageUrl,
+                            fit: BoxFit.cover,
+                          )
+                        else
+                          Container(color: cs.primaryContainer),
 
-                    // 3. 居中大头像展示区（向上滚动时会自动淡出）
-                    Positioned(
-                      top: MediaQuery.of(context).padding.top + kToolbarHeight + 10,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          width: 68,
-                          height: 68,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: cs.surface,
-                            border: Border.all(
-                              color: cs.primary.withValues(alpha: 0.15),
-                              width: 3,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                            image: safeImageUrl != null
-                                ? DecorationImage(
-                                    image: CachedNetworkImageProvider(safeImageUrl),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
+                        // 2. 极致的高斯模糊与表面色彩融合（Glassmorphism）
+                        // 既能保留原图的色彩分布，又绝对保证文字的对比度可读性
+                        BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                          child: Container(
+                            color: cs.surface.withValues(alpha: 0.85),
                           ),
-                          child: safeImageUrl == null
-                              ? Icon(Icons.rss_feed, size: 32, color: cs.primary)
-                              : null,
+                        ),
+
+                        // 3. 居中大头像展示区（向上滚动时会自动淡出）
+                        Positioned(
+                          top: MediaQuery.of(context).padding.top + kToolbarHeight + 10,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: Container(
+                              width: 68,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: cs.surface,
+                                border: Border.all(
+                                  color: cs.primary.withValues(alpha: 0.15),
+                                  width: 3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                                image: safeImageUrl != null
+                                    ? DecorationImage(
+                                        image: CachedNetworkImageProvider(safeImageUrl),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: safeImageUrl == null
+                                  ? Icon(Icons.rss_feed, size: 32, color: cs.primary)
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    collapseMode: CollapseMode.pin,
+                  ),
+                ],
+              ),
+              actions: [
+                // Unread Count Badge
+                Obx(() {
+                  final unreadCount = controller.articles.where((a) => !a.isRead).length;
+                  if (unreadCount == 0) return const SizedBox.shrink();
+                  return Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        unreadCount.toString(),
+                        style: TextStyle(
+                          color: cs.primary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              actions: [
+                  );
+                }),
                 // 已读筛选
                 Obx(() => PopupMenuButton<int>(
                       tooltip: '筛选文章状态',

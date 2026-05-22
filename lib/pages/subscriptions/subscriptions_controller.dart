@@ -112,13 +112,15 @@ class SubscriptionsController extends GetxController {
   void refreshUnreadCounts() {
     final eid = ArticleStateNotifier.lastEntryId;
     if (eid != null) {
+      // 消费后立刻清除，防止后续调用永远走增量路径
+      ArticleStateNotifier.clearLastEntryId();
       // 增量：只更新单篇对应的 feedId 计数
       final raw = GStorage.articleDb.get(eid);
       if (raw is Map) {
         final a = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
-        if (!a.isRead && a.feedId.isNotEmpty) {
+        if (!a.isRead && !a.isRejectedByAi && a.feedId.isNotEmpty) {
           _unreadCounts[a.feedId] = (_unreadCounts[a.feedId] ?? 0) + 1;
-        } else if (a.isRead && a.feedId.isNotEmpty) {
+        } else if ((a.isRead || a.isRejectedByAi) && a.feedId.isNotEmpty) {
           final prev = _unreadCounts[a.feedId] ?? 0;
           if (prev > 0) _unreadCounts[a.feedId] = prev - 1;
         }
@@ -130,7 +132,7 @@ class SubscriptionsController extends GetxController {
     final all = LocalArticleDbService.readAllArticles();
     final counts = <String, int>{};
     for (final a in all) {
-      if (a.isRead || a.feedId.isEmpty) continue;
+      if (a.isRead || a.isRejectedByAi || a.feedId.isEmpty) continue;
       counts[a.feedId] = (counts[a.feedId] ?? 0) + 1;
     }
     _unreadCounts.value = counts;

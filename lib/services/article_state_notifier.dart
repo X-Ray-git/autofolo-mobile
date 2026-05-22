@@ -9,6 +9,9 @@ abstract final class ArticleStateNotifier {
   /// 最近的变更 entryId（消费者读完即清）
   static String? get lastEntryId => _lastEntryId;
 
+  /// 消费者读完后清除，防止后续调用永远走增量路径
+  static void clearLastEntryId() => _lastEntryId = null;
+
   static void tick(String entryId) {
     _lastEntryId = entryId;
     version.value++;

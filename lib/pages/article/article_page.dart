@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,6 +22,7 @@ import '../../utils/storage.dart';
 import '../timeline/timeline_controller.dart';
 import 'widgets/html_chunk_card.dart';
 import 'widgets/image_gallery_page.dart';
+import '../../common/widgets/hero_dialog_route.dart';
 
 /// 文章详情控制器
 class ArticleController extends GetxController {
@@ -308,11 +310,13 @@ class ArticleController extends GetxController {
     );
   }
 
-  void openImagePreview(String imageUrl) {
-    Get.to(
-      () => ImageGalleryPage(
-        imageUrls: imageUrls,
-        initialIndex: imageUrls.indexOf(imageUrl).clamp(0, imageUrls.length - 1),
+  void openImagePreview(String imageUrl, BuildContext context) {
+    Navigator.of(context).push(
+      HeroDialogRoute(
+        builder: (context) => ImageGalleryPage(
+          imageUrls: imageUrls,
+          initialIndex: imageUrls.indexOf(imageUrl).clamp(0, imageUrls.length - 1),
+        ),
       ),
     );
   }
@@ -411,7 +415,7 @@ class _ArticlePagerPageState extends State<_ArticlePagerPage> {
       itemBuilder: (context, index) => ArticlePageView(
         key: ValueKey(articles[index].entryId),
         article: articles[index],
-        pageLabel: '${index + 1}/${articles.length}',
+        pageLabel: '${index + 1} / ${articles.length}',
       ),
     );
   }
@@ -474,24 +478,46 @@ class _ArticlePageViewState extends State<ArticlePageView> {
 
     return Scaffold(
       appBar: AppBar(
-        title: widget.pageLabel == null
-            ? const Text('文章详情')
-            : Text('第 ${widget.pageLabel} 篇'),
+        title: Text(
+          widget.pageLabel ?? '文章详情',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 2.0,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: colorScheme.surface.withValues(alpha: 0.7),
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
         actions: const [],
-        // 3. 使用 ValueListenableBuilder 局部刷新进度条
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(2.0),
+          preferredSize: const Size.fromHeight(1.0),
           child: ValueListenableBuilder<double>(
             valueListenable: _scrollProgress,
             builder: (context, progress, child) {
               return progress > 0.0
-                  ? LinearProgressIndicator(
-                      value: progress,
-                      backgroundColor: Colors.transparent,
-                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                      minHeight: 2.0,
+                  ? TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0.0, end: progress),
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, value, _) {
+                        return LinearProgressIndicator(
+                          value: value,
+                          minHeight: 1.0,
+                          backgroundColor: Colors.transparent,
+                          valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                        );
+                      },
                     )
-                  : const SizedBox(height: 2.0);
+                  : const SizedBox.shrink();
             },
           ),
         ),
@@ -606,15 +632,14 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                 );
               }
 
-              return SliverList.builder(
-                itemCount: activeChunks.length,
-                itemBuilder: (context, index) {
+              return SliverList.list(
+                children: activeChunks.map((chunk) {
                   return HtmlChunkCard(
-                    chunk: activeChunks[index],
+                    chunk: chunk,
                     maxWidth: maxWidth,
-                    onImageTap: controller.openImagePreview,
+                    onImageTap: (url) => controller.openImagePreview(url, context),
                   );
-                },
+                }).toList(),
               );
             }),
           ),
