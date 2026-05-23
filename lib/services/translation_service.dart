@@ -128,7 +128,11 @@ abstract final class TranslationService {
 
   static TranslationRecord? recordOf(String entryId) {
     ensureHydrated();
-    return _records[entryId];
+    final r = _records[entryId];
+    if (r != null && r.status == TranslationStatus.pending) {
+      debugPrint('[Translation] ⚠️ recordOf($entryId) → still PENDING');
+    }
+    return r;
   }
 
   static TranslationStatus statusOf(String entryId) {
@@ -325,6 +329,14 @@ HTML：
       return TranslationRecord(
         status: TranslationStatus.error,
         errorMessage: e.message,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e, stack) {
+      debugPrint('[Translation] 💥 ${article.entryId}: 未捕获异常: $e\n$stack');
+      _restoreAfterFailure(article.entryId, previous, e.toString());
+      return TranslationRecord(
+        status: TranslationStatus.error,
+        errorMessage: e.toString(),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
     }

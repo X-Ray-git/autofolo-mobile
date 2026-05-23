@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -286,6 +287,7 @@ class ArticleController extends GetxController {
     }
 
     isTranslating.value = true;
+    debugPrint('[Translation] 📝 手动翻译: ${article.entryId} length=${normalizedContent.length}');
     try {
       final record = await TranslationService.translateArticle(
         article,
