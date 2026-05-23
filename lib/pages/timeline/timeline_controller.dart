@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:intl/intl.dart';
 import 'package:get/get.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart';
 
 import '../../common/constants/constants.dart';
 import '../../http/feed_http.dart';
@@ -39,6 +40,7 @@ class TimelineController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    ever(allArticles, (_) => _updateAppBadge());
     loadFeedsThenArticles();
   }
 
@@ -305,6 +307,28 @@ class TimelineController extends GetxController {
   int get unreadCount => allArticles.where((a) => !a.isRead).length;
   int get readCount => allArticles.where((a) => a.isRead).length;
   int get allCount => allArticles.length;
+  
+  void _updateAppBadge() {
+    final strategy = GStorage.setting.get(
+      StorageKeys.badgeStrategy,
+      defaultValue: 'unread_count',
+    );
+    if (strategy == 'off') {
+      FlutterAppBadger.removeBadge();
+      return;
+    }
+    
+    final unread = unreadCount;
+    if (unread == 0) {
+      FlutterAppBadger.removeBadge();
+    } else {
+      if (strategy == 'dot_only') {
+        FlutterAppBadger.updateBadgeCount(1);
+      } else {
+        FlutterAppBadger.updateBadgeCount(unread);
+      }
+    }
+  }
   List<ArticleModel> get searchSourceArticles => allArticles.toList();
   String get emptyMessage => switch (selectedMode.value) {
     TimelineViewMode.unread => '没有未读文章',

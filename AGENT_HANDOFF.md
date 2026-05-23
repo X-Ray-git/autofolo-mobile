@@ -641,6 +641,27 @@ errorWidget: (context, url, error) => AspectRatio(
    - 添加 memCacheHeight/maxHeightDiskCache
    - 替换占位符为静态容器
 
+## 26. 应用退出行为优化与桌面角标配置 (v1.6)
+
+### 26.1 需求
+- **退出行为**：首页按下返回键时，不再直接杀掉进程，而是改为“退后台 (Move to Background)”，以便保留内存状态，实现热启动秒开。
+- **桌面角标**：支持桌面图标红点/数字提醒，并在设置中提供配置项（显示未读数、仅显示红点、关闭）。
+
+### 26.2 实现
+- `lib/pages/main/main_page.dart`：
+  - 在最外层包裹 `PopScope` 拦截 `didPop`。
+  - 引入 `move_to_background` 插件，调用 `MoveToBackground.moveTaskToBack()`。
+- `lib/common/constants/constants.dart`：
+  - 新增 `StorageKeys.badgeStrategy` 用于 Hive 存储。
+- `lib/pages/settings/settings_page.dart`：
+  - 增加“桌面角标显示规则”的 DropdownButtonFormField。
+- `lib/pages/timeline/timeline_controller.dart`：
+  - 引入 `flutter_app_badger` 插件。
+  - 在 `onInit` 中使用 `ever(allArticles, ...)` 监听列表变化，触发角标更新。
+
+### 26.3 注意事项
+- 目前角标更新依赖 App 处于前台或后台挂起状态。若 App 被系统强杀，云端新文章无法主动推送到桌面角标，这需要未来通过 FCM 推送唤醒或 Background Fetch 解决。
+
 ## 历史版本标记
 
 ## 12. 订阅源三级分组与视图标签（2026-05-17）

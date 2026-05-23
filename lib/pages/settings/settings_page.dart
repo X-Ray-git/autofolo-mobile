@@ -34,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _obscureClientId = true;
   bool _obscureSessionId = true;
   bool _obscureDeepseekKey = true;
+  late String _badgeStrategy;
 
   @override
   void initState() {
@@ -50,6 +51,10 @@ class _SettingsPageState extends State<SettingsPage> {
       defaultValue: AppConstants.defaultReadSyncWindowDays,
     );
     _readSyncWindowDaysController.text = readWindowDays.toString();
+    _badgeStrategy = GStorage.setting.get(
+      StorageKeys.badgeStrategy,
+      defaultValue: 'unread_count',
+    );
   }
 
   @override
@@ -104,6 +109,7 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
     GStorage.setting.put(StorageKeys.readSyncWindowDays, readWindowDays);
+    GStorage.setting.put(StorageKeys.badgeStrategy, _badgeStrategy);
 
     AppFeedback.success('配置已保存', '设置已更新');
   }
@@ -312,6 +318,25 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
+
+          const SizedBox(height: 16),
+
+          DropdownButtonFormField<String>(
+            value: _badgeStrategy,
+            decoration: const InputDecoration(
+              labelText: '桌面角标显示规则',
+              border: OutlineInputBorder(),
+              helperText: '配置应用在退到后台时，桌面图标右上角的红点行为',
+            ),
+            items: const [
+              DropdownMenuItem(value: 'unread_count', child: Text('显示未读文章数量')),
+              DropdownMenuItem(value: 'dot_only', child: Text('有未读时仅显示红点')),
+              DropdownMenuItem(value: 'off', child: Text('关闭桌面角标')),
+            ],
+            onChanged: (val) {
+              if (val != null) setState(() => _badgeStrategy = val);
+            },
           ),
 
           const SizedBox(height: 24),
