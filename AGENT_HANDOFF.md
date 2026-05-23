@@ -1459,6 +1459,9 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
   - 增加了严格的 `hasError` 检测。当面临成百上千条未读文章导致网络极大概率超时的情况下，不会再假死无反应，而是会静默弹出“同步未完成，部分拉取失败”的提示，增强了应用的健壮性。
 
 
+
+## 43. 刷新圈反悔手势阻断优化（2026-05-22）
+
 - **问题背景**：在带有半透明 AppBar 的设计中，当下拉刷新圈（未松手）再反悔向上推时，底层的 `ClampingScrollPhysics` 默认允许向上的滚动偏移量作用于列表，导致文章列表跟随手指滑动，钻入 AppBar 背后产生不自然的视觉穿透。
 - **高阶边界拦截**：为了完美复刻 PiliPlus 中“刷新圈在屏幕上时列表完全冻结”的效果，引入了 `RefreshAwareScrollPhysics`。
   - 该方案彻底摒弃了在 `applyPhysicsToUserOffset` 阶段拦截（因其会导致 Flutter 底层计算出符号相反的 `overscroll` 进而让刷新圈死锁）。
@@ -1523,3 +1526,49 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 10. 设置页副标题 + FeedbackToast 重写
 
 Tag: `v1.0.0-beta1` — 功能完备（AI 过滤 + 翻译 + 摘要），橙色主题，全 UI 打磨。
+## 46. 仓库管理规范（2026-05-23）
+
+以下规则记录到文档中以便未来 AGENT 和协作者严格遵循。
+
+### 一、提交粒度
+
+- 一个 commit = 一个可独立回退的逻辑改动
+- 禁止混合 "修 bug + 顺带改 UI"——示例反例：`f9b06ad`（物理引擎+图片画廊+导航三者合一）
+- 不跨模块提交：`Refactor: ArticlePage` 不夹带 `FilterReviewPage` 的修改
+
+### 二、Tag 管理
+
+- **永不 force-update**：每次发版新建 tag，如 `v1.0.0-beta2`、`v1.0.0-rc1`
+- beta 阶段可密集发（按天/按功能），RC 之后减速
+- tag 注释写完整：日期 + 核心改动 + 对应的文档 § 编号
+- 删除旧 tag 只在修复错打时使用，不使用 `-f` 覆盖
+
+### 三、文档同步
+
+- commit message 引用对应 § 编号（格式：`Refactor: xxx (§12)` 或 `Fix: xxx, see §8`）
+- 每个功能完成 → 立即更新文档，不打完 tag 才补文档
+- tag 打在文档和代码一起提交的 commit 上
+- § 编号连续递增，不跳号、不重号
+
+### 四、全局状态变更通知
+
+- 任何涉及 `ArticleStateNotifier.tick()` 的改动，必须验证 6 个消费者页面全部正常：
+  - `timeline_page` · `timeline_controller` · `filter_review_page` · `article_page` · `feed_detail_page` · `subscriptions_controller`
+- 新增消费者时在本文档登记
+
+### 五、Flutter 代码规范
+
+- 结构性重构（>30 行）使用 `write_file` 一次性写入，避免 `edit_file` 重复修改导致括号混乱
+- 嵌套超过 3 层的 widget 提取为独立 StatelessWidget 或辅助方法
+- 修改 `ColorScheme` 后检查 3 个以上不同页面，确保无硬编码色值遗漏（当前残留：`filter_review_page.dart`、`image_gallery_page.dart`、`timeline_page.dart`）
+
+### 六、当前违规项（待修）
+
+| 原则 | 文件 | 问题 |
+|------|------|------|
+| 提交粒度 | `f9b06ad` | 一个 commit 混了 3 个模块 |
+| tag | `v1.0.0-beta1` | 被 force-update 3 次，从下个版本严格递增命名 |
+| 硬编码色值 | `filter_review_page.dart:240` 等 | `Color(0xFF10B981)` 应提取为主题色 |
+| 硬编码色值 | `image_gallery_page.dart` | 内联色值 |
+| 硬编码色值 | `timeline_page.dart` | 过滤入口色值 |
+
