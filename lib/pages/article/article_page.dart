@@ -98,6 +98,24 @@ class ArticleController extends GetxController {
     );
     if (result is Success<String> && result.response.isNotEmpty) {
       _initContent(overrideContent: result.response);
+      // 持久化到本地，下次打开无需重复拉取
+      LocalArticleDbService.upsertOne(ArticleModel(
+        entryId: article.entryId,
+        feedId: article.feedId,
+        feedTitle: article.feedTitle,
+        feedImage: article.feedImage,
+        title: article.title,
+        url: article.url,
+        content: result.response,
+        publishedAt: article.publishedAt,
+        category: article.category,
+        subscriptionCategory: article.subscriptionCategory,
+        author: article.author,
+        imageUrl: article.imageUrl,
+        isRejectedByAi: article.isRejectedByAi,
+        filterReason: article.filterReason,
+        filterReviewed: article.filterReviewed,
+      ));
       update(); // 通知 UI 重建
     }
     isFetchingContent.value = false;
@@ -116,6 +134,24 @@ class ArticleController extends GetxController {
         final articleNode = ArticleContentUtils.getReadabilityContent(document);
         if (articleNode != null) {
           _initContent(overrideContent: articleNode.outerHtml);
+          // 持久化抓取结果，下次打开无需重复抓
+          LocalArticleDbService.upsertOne(ArticleModel(
+            entryId: article.entryId,
+            feedId: article.feedId,
+            feedTitle: article.feedTitle,
+            feedImage: article.feedImage,
+            title: article.title,
+            url: article.url,
+            content: articleNode.outerHtml,
+            publishedAt: article.publishedAt,
+            category: article.category,
+            subscriptionCategory: article.subscriptionCategory,
+            author: article.author,
+            imageUrl: article.imageUrl,
+            isRejectedByAi: article.isRejectedByAi,
+            filterReason: article.filterReason,
+            filterReviewed: article.filterReviewed,
+          ));
         }
       } catch (e) {
         // silently fail on auto-fetch
