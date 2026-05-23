@@ -151,7 +151,7 @@ abstract final class TranslationService {
       status: TranslationStatus.pending,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
-    GStorage.translations.put(entryId, _records[entryId]!.toJson());
+    // pending 不落盘 — 瞬态，重启后无需恢复
   }
 
   static String displayTitleFor(ArticleModel article) {
@@ -196,19 +196,17 @@ abstract final class TranslationService {
     }
 
     final previous = recordOf(article.entryId);
-    _writeRecord(
-      article.entryId,
-      (previous ??
-              TranslationRecord(
-                status: TranslationStatus.idle,
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ))
-          .copyWith(
-            status: TranslationStatus.pending,
-            errorMessage: null,
-            updatedAt: DateTime.now().millisecondsSinceEpoch,
-          ),
-    );
+    // pending 只写内存，不落盘
+    _records[article.entryId] = (previous ??
+            TranslationRecord(
+              status: TranslationStatus.idle,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ))
+        .copyWith(
+          status: TranslationStatus.pending,
+          errorMessage: null,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        );
 
     final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
       article.entryId,

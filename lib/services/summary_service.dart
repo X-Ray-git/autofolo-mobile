@@ -151,19 +151,17 @@ abstract final class SummaryService {
     }
 
     final previous = recordOf(article.entryId);
-    _writeRecord(
-      article.entryId,
-      (previous ??
-              SummaryRecord(
-                status: SummaryStatus.idle,
-                updatedAt: DateTime.now().millisecondsSinceEpoch,
-              ))
-          .copyWith(
-            status: SummaryStatus.pending,
-            errorMessage: null,
-            updatedAt: DateTime.now().millisecondsSinceEpoch,
-          ),
-    );
+    // pending 只写内存，不落盘
+    _records[article.entryId] = (previous ??
+            SummaryRecord(
+              status: SummaryStatus.idle,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ))
+        .copyWith(
+          status: SummaryStatus.pending,
+          errorMessage: null,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        );
 
     final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
       article.entryId,
