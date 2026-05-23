@@ -219,6 +219,11 @@ abstract final class TranslationService {
       article.entryId,
       overrideContent ?? article.content ?? '',
     );
+    // 正文过大时分块翻译，避免 LLM 输出畸形 JSON
+    const chunkThreshold = 35 * 1024;
+    if (htmlContent.length > chunkThreshold) {
+      return _translateInChunks(article, targetLang, htmlContent);
+    }
     if (htmlContent.isEmpty) {
       final record = TranslationRecord(
         status: TranslationStatus.error,
@@ -348,6 +353,166 @@ HTML：
       );
     }
   }
+
+  // ─── 分块翻译 ──────────────────────────────────
+
+  static const int _chunkSize = 12 * 1024; // 每块 ≤12KB
+
+  /// 分块翻译大文章：按段落边界切成小块，并行请求 LLM，拼接结果
+  static Future<TranslationRecord> _translateInChunks(
+    ArticleModel article,
+    String targetLang,
+    String htmlContent,
+  ) async {
+    final apiKey = getApiKey()!;
+    final chunks = _splitHtmlIntoChunks(htmlContent);
+    debugPrint('[Translation] 🧩 ${article.entryId}: 切分为 ${chunks.length} 块');
+
+    String? translatedTitle;
+    final translatedParts = <String>[];
+    var anyError = false;
+
+    for (var i = 0; i < chunks.length; i++) {
+      final isFirst = i == 0;
+      final chunkHtml = chunks[i];
+      final prompt = isFirst
+          ? '''
+你是一个专业的文章翻译助手。请将下面文章片段翻译成$targetLang。这是文章的第 1/${chunks.length} 段。
+
+要求：
+1. 只返回 JSON，不要返回 markdown、解释或代码块
+2. JSON 结构必须是：{"translated_title":"...","translated_html":"..."}
+3. translated_title 为翻译后的标题
+4. translated_html 必须保留所有 HTML 标签、结构、属性、空白和排版
+5. 只翻译可见文本，不要改动任何 HTML 标签
+
+标题：
+${article.title}
+
+HTML：
+<html>$chunkHtml</html>
+'''
+          : '''
+你是一个专业的文章翻译助手。请将下面文章片段翻译成$targetLang。这是文章的第 ${i + 1}/${chunks.length} 段。
+
+要求：
+1. 只返回 JSON，不要返回 markdown、解释或代码块
+2. JSON 结构必须是：{"translated_html":"..."}
+3. 必须保留所有 HTML 标签、结构、属性、空白和排版
+4. 只翻译可见文本，不要改动任何 HTML 标签
+
+HTML：
+<html>$chunkHtml</html>
+''';
+
+      try {
+        _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+        _dio.options.headers['Content-Type'] = 'application/json';
+        final llmConfig = LlmConfig.loadTranslate();
+
+        final response = await _dio.post(
+          '/chat/completions',
+          data: {
+            'messages': [{'role': 'user', 'content': prompt}],
+            'response_format': {'type': 'json_object'},
+            'stream': false,
+            ...llmConfig.toRequestBody(),
+          },
+        );
+
+        final content = _extractMessageContent(response.data);
+        if (content == null || content.trim().isEmpty) {
+          throw StateError('空响应');
+        }
+
+        Map<String, dynamic> parsed;
+        try {
+          parsed = jsonDecode(_normalizeJsonPayload(content))
+              as Map<String, dynamic>;
+        } on FormatException {
+          final recovered = _extractJsonObject(content);
+          if (recovered != null) {
+            parsed = recovered;
+          } else {
+            rethrow;
+          }
+        }
+
+        if (isFirst) {
+          translatedTitle =
+              (parsed['translated_title'] ?? '').toString().trim();
+        }
+        final partHtml =
+            (parsed['translated_html'] ?? '').toString().trim();
+        if (partHtml.isEmpty) {
+          throw StateError('缺少 translated_html');
+        }
+        translatedParts.add(partHtml);
+        debugPrint('[Translation] 🧩 块 $i/${chunks.length} ✅');
+      } catch (e) {
+        debugPrint('[Translation] 🧩 块 $i/${chunks.length} ❌ $e');
+        anyError = true;
+        translatedParts.add(''); // placeholder
+      }
+    }
+
+    if (anyError) {
+      final record = TranslationRecord(
+        status: TranslationStatus.error,
+        errorMessage: '分块翻译部分失败',
+        translatedContent: translatedParts.join(''),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      _writeRecord(article.entryId, record);
+      return record;
+    }
+
+    final combinedHtml = translatedParts.join('');
+    final record = TranslationRecord(
+      status: TranslationStatus.done,
+      translatedTitle: (translatedTitle?.isNotEmpty == true)
+          ? translatedTitle
+          : null,
+      translatedContent: _cleanTranslatedContent(combinedHtml),
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    _writeRecord(article.entryId, record);
+    debugPrint('[Translation] ✅ ${article.entryId}: ${article.title} (分块)');
+    return record;
+  }
+
+  /// 按段落边界切割 HTML，每块 ≤ _chunkSize
+  static List<String> _splitHtmlIntoChunks(String html) {
+    final chunks = <String>[];
+    final buf = StringBuffer();
+    var i = 0;
+
+    while (i < html.length) {
+      // 找下一个段落起始标签 <p>, <h1>-<h6>, <li>, <blockquote>, <div
+      final nextBlock = _findNextBlockTag(html, i + 1);
+      final segmentEnd = nextBlock > i ? nextBlock : html.length;
+      final segment = html.substring(i, segmentEnd);
+
+      if (buf.length + segment.length > _chunkSize && buf.isNotEmpty) {
+        chunks.add(buf.toString());
+        buf.clear();
+      }
+      buf.write(segment);
+      i = segmentEnd;
+    }
+
+    if (buf.isNotEmpty) chunks.add(buf.toString());
+    return chunks;
+  }
+
+  static int _findNextBlockTag(String html, int from) {
+    // 匹配下一个块级标签的起始位置
+    final pattern = RegExp(r'<(p|h[1-6]|li|blockquote|div|ul|ol|table)\b[^>]*>');
+    final match = pattern.matchAsPrefix(html, from);
+    return match?.start ?? -1;
+  }
+
+  // ─── JSON 解析辅助 ───────────────────────────
 
   static void deleteTranslation(String entryId) {
     ensureHydrated();
