@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 
 import '../models/article.dart';
@@ -94,12 +95,23 @@ abstract final class TranslationService {
   static void ensureHydrated() {
     if (_hydrated) return;
     final box = GStorage.translations;
+    var staleCount = 0;
     for (final key in box.keys.cast<String>()) {
       final value = box.get(key);
       if (value is Map) {
-        _records[key] = TranslationRecord.fromJson(
+        final record = TranslationRecord.fromJson(
           value.cast<dynamic, dynamic>(),
         );
+        // 清理残留的 pending 状态（App 被杀/崩溃导致）
+        if (record.status == TranslationStatus.pending) {
+          staleCount++;
+          _records[key] = record.copyWith(
+            status: TranslationStatus.idle,
+            errorMessage: '上一次翻译未完成（已自动恢复）',
+          );
+        } else {
+          _records[key] = record;
+        }
       } else if (value is String && value.isNotEmpty) {
         _records[key] = TranslationRecord(
           status: TranslationStatus.done,
@@ -107,6 +119,9 @@ abstract final class TranslationService {
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         );
       }
+    }
+    if (staleCount > 0) {
+      debugPrint('[Translation] 清理了 $staleCount 条残留 pending 记录');
     }
     _hydrated = true;
   }
@@ -137,6 +152,7 @@ abstract final class TranslationService {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     GStorage.translations.put(entryId, _records[entryId]!.toJson());
+    debugPrint('[Translation] ⏳ markPending: $entryId');
   }
 
   static String displayTitleFor(ArticleModel article) {
@@ -284,9 +300,11 @@ HTML：
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
       _writeRecord(article.entryId, record);
+      debugPrint('[Translation] ✅ ${article.entryId}: ${article.title}');
       return record;
     } on DioException catch (e) {
       final error = e.message ?? 'DeepSeek request failed';
+      debugPrint('[Translation] ❌ ${article.entryId}: $error');
       _restoreAfterFailure(article.entryId, previous, error);
       return TranslationRecord(
         status: TranslationStatus.error,
@@ -294,6 +312,7 @@ HTML：
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
     } on FormatException catch (e) {
+      debugPrint('[Translation] ❌ ${article.entryId}: FormatException: ${e.message}');
       _restoreAfterFailure(article.entryId, previous, e.message);
       return TranslationRecord(
         status: TranslationStatus.error,
@@ -301,6 +320,7 @@ HTML：
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
     } on StateError catch (e) {
+      debugPrint('[Translation] ❌ ${article.entryId}: StateError: ${e.message}');
       _restoreAfterFailure(article.entryId, previous, e.message);
       return TranslationRecord(
         status: TranslationStatus.error,
