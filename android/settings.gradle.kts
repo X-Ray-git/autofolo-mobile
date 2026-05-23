@@ -24,3 +24,19 @@ plugins {
 }
 
 include(":app")
+
+gradle.beforeProject {
+    // 修复旧版插件（flutter_app_badger）缺失 namespace
+    // 在项目配置前检查并注入
+    if (name == ":flutter_app_badger") {
+        val gf = File(projectDir, "build.gradle")
+        if (gf.exists() && !gf.readText().contains("namespace")) {
+            gf.writeText(
+                gf.readText().replaceFirst(
+                    "android {",
+                    "android {\n    namespace \"fr.g123k.flutterappbadge\""
+                )
+            )
+        }
+    }
+}
