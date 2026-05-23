@@ -276,7 +276,13 @@ HTML：
         parsed = jsonDecode(_normalizeJsonPayload(content))
             as Map<String, dynamic>;
       } on FormatException {
-        // JSON 解析失败（模型返回了未转义字符）→ 尝试只提取 JSON 对象
+        // JSON 解析失败（模型返回了未转义字符）→ 打印首尾便于定位
+        final head = content.length <= 300 ? content : content.substring(0, 300);
+        final tail = content.length > 300
+            ? content.substring(content.length - 100)
+            : '';
+        debugPrint('[Translation] 🔍 长度=${content.length} 首=$head');
+        if (tail.isNotEmpty) debugPrint('[Translation] 🔍 尾=$tail');
         final recovered = _extractJsonObject(content);
         if (recovered != null) {
           parsed = recovered;
