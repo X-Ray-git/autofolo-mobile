@@ -199,11 +199,11 @@ abstract final class ArticleContentUtils {
 
   /// 扁平化邮件 Newsletter 的表格布局（保留文字、链接、图片），大幅缩减退给 LLM 的正文体积
   static void _flattenLayoutTables(dom.DocumentFragment fragment) {
-    // 从最底层向上拆：td/th → tr → tbody/thead/tfoot → table
     final tables = fragment.querySelectorAll('table').toList();
     for (final table in tables) {
+      // 有 <th> 的表格通常是数据表，保留不拆
+      if (table.querySelector('th') != null) continue;
       _unwrapElements(table.querySelectorAll('td').toList());
-      _unwrapElements(table.querySelectorAll('th').toList());
       _unwrapElements(table.querySelectorAll('tr').toList());
       _unwrapElements(table.querySelectorAll('thead').toList());
       _unwrapElements(table.querySelectorAll('tbody').toList());
