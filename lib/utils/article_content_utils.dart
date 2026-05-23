@@ -57,6 +57,7 @@ abstract final class ArticleContentUtils {
     _normalizeImages(fragment);
     _trimSpacingStyles(fragment);
     _removeEmptyBlocks(fragment);
+    _flattenLayoutTables(fragment);
 
     var html = _fragmentToHtml(fragment);
     html = html.replaceAll(
@@ -194,6 +195,31 @@ abstract final class ArticleContentUtils {
       }
     }
     return false;
+  }
+
+  /// 扁平化邮件 Newsletter 的表格布局（保留文字、链接、图片），大幅缩减退给 LLM 的正文体积
+  static void _flattenLayoutTables(dom.DocumentFragment fragment) {
+    // 从最底层向上拆：td/th → tr → tbody/thead/tfoot → table
+    final tables = fragment.querySelectorAll('table').toList();
+    for (final table in tables) {
+      _unwrapElements(table.querySelectorAll('td').toList());
+      _unwrapElements(table.querySelectorAll('th').toList());
+      _unwrapElements(table.querySelectorAll('tr').toList());
+      _unwrapElements(table.querySelectorAll('thead').toList());
+      _unwrapElements(table.querySelectorAll('tbody').toList());
+      _unwrapElements(table.querySelectorAll('tfoot').toList());
+      _unwrapElements([table]);
+    }
+  }
+
+  static void _unwrapElements(List<dom.Element> elements) {
+    for (final el in elements) {
+      final children = el.nodes.toList();
+      for (final child in children) {
+        el.parentNode?.insertBefore(child, el);
+      }
+      el.remove();
+    }
   }
 
   /// 剔除邮件追踪像素（1×1 不可见图片）

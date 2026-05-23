@@ -247,6 +247,7 @@ HTML：
 <html>$htmlContent</html>
 ''';
 
+    debugPrint('[Translation] 📄 ${article.entryId} htmlLen=${htmlContent.length} head=${htmlContent.length <= 200 ? htmlContent : htmlContent.substring(0, 200)}');
     try {
       _dio.options.headers['Authorization'] = 'Bearer $apiKey';
       _dio.options.headers['Content-Type'] = 'application/json';
