@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:move_to_background/move_to_background.dart';
 
 import '../../models/article.dart';
 import '../../router/app_pages.dart';
@@ -42,7 +43,13 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        MoveToBackground.moveTaskToBack();
+      },
+      child: Scaffold(
       extendBody: true, // 核心：允许列表内容穿透到导航栏下方，配合毛玻璃效果
       extendBodyBehindAppBar: true, // 核心：允许列表内容穿透到顶部导航栏下方
       appBar: AppBar(
