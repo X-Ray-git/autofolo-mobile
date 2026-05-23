@@ -276,12 +276,9 @@ class _ArticleCardContent extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                  if (showSummary) ...[
-                    const SizedBox(height: 12),
+                  if (showSummary)
                     _buildSummaryBlock(colorScheme, article.entryId),
-                  ] else ...[
-                    const SizedBox(height: 12),
-                  ],
+                  const SizedBox(height: 12),
                   // 底部元信息区域重构：放弃 Wrap 与硬编码宽度，改用 Row + Flexible，保证时间永不换行
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -376,30 +373,54 @@ class _ArticleCardContent extends StatelessWidget {
 
   Widget _buildSummaryBlock(ColorScheme cs, String entryId) {
     final record = SummaryService.recordOf(entryId);
-    final isDone = record?.status == SummaryStatus.done;
+    final status = record?.status;
     final text = record?.summaryText;
 
-    final displayContent = (isDone && text != null && text.isNotEmpty)
-        ? text
-        : 'AI 尚未生成摘要...';
+    String displayContent;
+    Color textColor;
+    IconData icon;
 
-    return Row(
+    if (status == SummaryStatus.done && text != null && text.isNotEmpty) {
+      displayContent = text;
+      textColor = cs.onSurfaceVariant.withValues(alpha: 0.8);
+      icon = Icons.format_quote_rounded;
+    } else if (status == SummaryStatus.pending) {
+      displayContent = '摘要生成中…';
+      textColor = cs.primary.withValues(alpha: 0.6);
+      icon = Icons.sync;
+    } else if (status == SummaryStatus.error) {
+      displayContent = '摘要生成失败';
+      textColor = cs.error.withValues(alpha: 0.6);
+      icon = Icons.error_outline;
+    } else {
+      // idle or null — 请求尚未发出
+      displayContent = '排队等待摘要…';
+      textColor = cs.onSurfaceVariant.withValues(alpha: 0.4);
+      icon = Icons.hourglass_empty;
+    }
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.format_quote_rounded,
-            size: 16, color: cs.primary.withValues(alpha: 0.5)),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            displayContent,
-            style: TextStyle(
-              fontSize: 13,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-              height: 1.5,
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 16, color: textColor),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                displayContent,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: textColor,
+                  height: 1.5,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          ],
         ),
       ],
     );

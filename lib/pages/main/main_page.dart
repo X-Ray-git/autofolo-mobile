@@ -255,8 +255,9 @@ class _MainPageState extends State<MainPage> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   String _modeLabel(TimelineViewMode mode) => switch (mode) {
         TimelineViewMode.unread => '未读',
