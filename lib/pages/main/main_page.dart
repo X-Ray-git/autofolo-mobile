@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:move_to_background/move_to_background.dart';
+import '../../utils/move_to_background.dart';
 
 import '../../models/article.dart';
 import '../../router/app_pages.dart';
