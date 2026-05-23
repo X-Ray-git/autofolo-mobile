@@ -540,10 +540,10 @@ HTML：
   }
 
   static int _findNextBlockTag(String html, int from) {
-    // 匹配下一个块级标签的起始位置
+    // 匹配 from 之后下一个块级标签的起始位置
     final pattern = RegExp(r'<(p|h[1-6]|li|blockquote|div|ul|ol|table)\b[^>]*>');
-    final match = pattern.matchAsPrefix(html, from);
-    return match?.start ?? -1;
+    final idx = html.indexOf(pattern, from);
+    return idx;
   }
 
   // ─── JSON 解析辅助 ───────────────────────────
