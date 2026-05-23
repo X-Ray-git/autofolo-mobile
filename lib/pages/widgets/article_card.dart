@@ -8,6 +8,7 @@ import '../../common/widgets/pill_tag.dart';
 import '../../models/article.dart';
 import '../../services/article_image_service.dart';
 import '../../services/translation_service.dart';
+import '../../services/summary_service.dart';
 import '../../utils/source_taxonomy.dart';
 
 /// 文章卡片组件
@@ -16,6 +17,7 @@ class ArticleCard extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onTranslate;
   final bool showFeedTitle;
+  final bool showSummary;
 
   const ArticleCard({
     super.key,
@@ -23,6 +25,7 @@ class ArticleCard extends StatefulWidget {
     this.onTap,
     this.onTranslate,
     this.showFeedTitle = true,
+    this.showSummary = false,
   });
 
   @override
@@ -51,6 +54,7 @@ class _ArticleCardState extends State<ArticleCard> {
       onTap: widget.onTap,
       onTranslate: widget.onTranslate,
       showFeedTitle: widget.showFeedTitle,
+      showSummary: widget.showSummary,
       isTranslated: _isTranslated,
       onTranslateSuccess: _onTranslateSuccess,
     );
@@ -62,6 +66,7 @@ class _ArticleCardContent extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onTranslate;
   final bool showFeedTitle;
+  final bool showSummary;
   final bool isTranslated;
   final VoidCallback? onTranslateSuccess;
 
@@ -70,6 +75,7 @@ class _ArticleCardContent extends StatelessWidget {
     this.onTap,
     this.onTranslate,
     required this.showFeedTitle,
+    required this.showSummary,
     required this.isTranslated,
     this.onTranslateSuccess,
   });
@@ -270,7 +276,12 @@ class _ArticleCardContent extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                  const SizedBox(height: 12),
+                  if (showSummary) ...[
+                    const SizedBox(height: 12),
+                    _buildSummaryBlock(colorScheme, article.entryId),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                  ],
                   // 底部元信息区域重构：放弃 Wrap 与硬编码宽度，改用 Row + Flexible，保证时间永不换行
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -361,6 +372,37 @@ class _ArticleCardContent extends StatelessWidget {
         ),
       );
     });
+  }
+
+  Widget _buildSummaryBlock(ColorScheme cs, String entryId) {
+    final record = SummaryService.recordOf(entryId);
+    final isDone = record?.status == SummaryStatus.done;
+    final text = record?.summaryText;
+
+    final displayContent = (isDone && text != null && text.isNotEmpty)
+        ? text
+        : 'AI 尚未生成摘要...';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.format_quote_rounded,
+            size: 16, color: cs.primary.withValues(alpha: 0.5)),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            displayContent,
+            style: TextStyle(
+              fontSize: 13,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+              height: 1.5,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _translateArticle(BuildContext context) async {

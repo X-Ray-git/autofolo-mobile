@@ -189,6 +189,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
                           child: ArticleCard(
                             article: article,
                             showFeedTitle: true,
+                            showSummary: true,
                             onTap: () {
                               Get.toNamed(Routes.article, arguments: {
                                 'article': article,
