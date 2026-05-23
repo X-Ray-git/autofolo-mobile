@@ -368,106 +368,50 @@ HTML：
     final chunks = _splitHtmlIntoChunks(htmlContent);
     debugPrint('[Translation] 🧩 ${article.entryId}: 切分为 ${chunks.length} 块');
 
-    String? translatedTitle;
-    final translatedParts = <String>[];
-    var anyError = false;
+    final llmConfig = LlmConfig.loadTranslate();
+    final futures = List<Future<_ChunkResult>>.generate(chunks.length, (i) {
+      return _translateOneChunk(
+        i: i,
+        total: chunks.length,
+        chunkHtml: chunks[i],
+        articleTitle: article.title,
+        apiKey: apiKey,
+        targetLang: targetLang,
+        llmConfig: llmConfig,
+      );
+    });
 
-    for (var i = 0; i < chunks.length; i++) {
-      final isFirst = i == 0;
-      final chunkHtml = chunks[i];
-      final prompt = isFirst
-          ? '''
-你是一个专业的文章翻译助手。请将下面文章片段翻译成$targetLang。这是文章的第 1/${chunks.length} 段。
+    final results = await Future.wait(futures);
 
-要求：
-1. 只返回 JSON，不要返回 markdown、解释或代码块
-2. JSON 结构必须是：{"translated_title":"...","translated_html":"..."}
-3. translated_title 为翻译后的标题
-4. translated_html 必须保留所有 HTML 标签、结构、属性、空白和排版
-5. 只翻译可见文本，不要改动任何 HTML 标签
-
-标题：
-${article.title}
-
-HTML：
-<html>$chunkHtml</html>
-'''
-          : '''
-你是一个专业的文章翻译助手。请将下面文章片段翻译成$targetLang。这是文章的第 ${i + 1}/${chunks.length} 段。
-
-要求：
-1. 只返回 JSON，不要返回 markdown、解释或代码块
-2. JSON 结构必须是：{"translated_html":"..."}
-3. 必须保留所有 HTML 标签、结构、属性、空白和排版
-4. 只翻译可见文本，不要改动任何 HTML 标签
-
-HTML：
-<html>$chunkHtml</html>
-''';
-
-      try {
-        _dio.options.headers['Authorization'] = 'Bearer $apiKey';
-        _dio.options.headers['Content-Type'] = 'application/json';
-        final llmConfig = LlmConfig.loadTranslate();
-
-        final response = await _dio.post(
-          '/chat/completions',
-          data: {
-            'messages': [{'role': 'user', 'content': prompt}],
-            'response_format': {'type': 'json_object'},
-            'stream': false,
-            ...llmConfig.toRequestBody(),
-          },
-        );
-
-        final content = _extractMessageContent(response.data);
-        if (content == null || content.trim().isEmpty) {
-          throw StateError('空响应');
-        }
-
-        Map<String, dynamic> parsed;
-        try {
-          parsed = jsonDecode(_normalizeJsonPayload(content))
-              as Map<String, dynamic>;
-        } on FormatException {
-          final recovered = _extractJsonObject(content);
-          if (recovered != null) {
-            parsed = recovered;
-          } else {
-            rethrow;
-          }
-        }
-
-        if (isFirst) {
-          translatedTitle =
-              (parsed['translated_title'] ?? '').toString().trim();
-        }
-        final partHtml =
-            (parsed['translated_html'] ?? '').toString().trim();
-        if (partHtml.isEmpty) {
-          throw StateError('缺少 translated_html');
-        }
-        translatedParts.add(partHtml);
-        debugPrint('[Translation] 🧩 块 $i/${chunks.length} ✅');
-      } catch (e) {
-        debugPrint('[Translation] 🧩 块 $i/${chunks.length} ❌ $e');
-        anyError = true;
-        translatedParts.add(''); // placeholder
+    final parts = <String>[];
+    final titleParts = <String>[];
+    var hasError = false;
+    for (final r in results) {
+      if (r.error != null) {
+        debugPrint('[Translation] 🧩 块 ${r.index}/${chunks.length} ❌ ${r.error}');
+        hasError = true;
+        parts.add('');
+      } else {
+        debugPrint('[Translation] 🧩 块 ${r.index}/${chunks.length} ✅');
+        parts.add(r.html!);
+        if (r.title != null) titleParts.add(r.title!);
       }
     }
 
-    if (anyError) {
+    final translatedTitle = titleParts.isEmpty ? null : titleParts.join(' ').trim();
+
+    if (hasError) {
       final record = TranslationRecord(
         status: TranslationStatus.error,
         errorMessage: '分块翻译部分失败',
-        translatedContent: translatedParts.join(''),
+        translatedContent: parts.join(''),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
       _writeRecord(article.entryId, record);
       return record;
     }
 
-    final combinedHtml = translatedParts.join('');
+    final combinedHtml = parts.join('');
     final record = TranslationRecord(
       status: TranslationStatus.done,
       translatedTitle: (translatedTitle?.isNotEmpty == true)
@@ -479,6 +423,96 @@ HTML：
     _writeRecord(article.entryId, record);
     debugPrint('[Translation] ✅ ${article.entryId}: ${article.title} (分块)');
     return record;
+  }
+
+  static Future<_ChunkResult> _translateOneChunk({
+    required int i,
+    required int total,
+    required String chunkHtml,
+    required String articleTitle,
+    required String apiKey,
+    required String targetLang,
+    required LlmConfig llmConfig,
+  }) async {
+    final isFirst = i == 0;
+    final prompt = isFirst
+        ? '''
+你是一个专业的文章翻译助手。请将下面文章片段翻译成$targetLang。这是文章的第 1/$total 段。
+
+要求：
+1. 只返回 JSON，不要返回 markdown、解释或代码块
+2. JSON 结构必须是：{"translated_title":"...","translated_html":"..."}
+3. translated_title 为翻译后的标题
+4. translated_html 必须保留所有 HTML 标签、结构、属性、空白和排版
+5. 只翻译可见文本，不要改动任何 HTML 标签
+
+标题：
+$articleTitle
+
+HTML：
+<html>$chunkHtml</html>
+'''
+        : '''
+你是一个专业的文章翻译助手。请将下面文章片段翻译成$targetLang。这是文章的第 ${i + 1}/$total 段。
+
+要求：
+1. 只返回 JSON，不要返回 markdown、解释或代码块
+2. JSON 结构必须是：{"translated_html":"..."}
+3. 必须保留所有 HTML 标签、结构、属性、空白和排版
+4. 只翻译可见文本，不要改动任何 HTML 标签
+
+HTML：
+<html>$chunkHtml</html>
+''';
+
+    try {
+      // 每个并发请求用独立 header，避免共享 Dio 实例的状态竞争
+      final options = Options(
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+      );
+      final response = await _dio.post(
+        '/chat/completions',
+        data: {
+          'messages': [{'role': 'user', 'content': prompt}],
+          'response_format': {'type': 'json_object'},
+          'stream': false,
+          ...llmConfig.toRequestBody(),
+        },
+        options: options,
+      );
+
+      final content = _extractMessageContent(response.data);
+      if (content == null || content.trim().isEmpty) {
+        return _ChunkResult(i, error: '空响应');
+      }
+
+      Map<String, dynamic> parsed;
+      try {
+        parsed = jsonDecode(_normalizeJsonPayload(content))
+            as Map<String, dynamic>;
+      } on FormatException {
+        final recovered = _extractJsonObject(content);
+        if (recovered != null) {
+          parsed = recovered;
+        } else {
+          return _ChunkResult(i, error: 'JSON 解析失败');
+        }
+      }
+
+      final title = isFirst
+          ? (parsed['translated_title'] ?? '').toString().trim()
+          : null;
+      final html = (parsed['translated_html'] ?? '').toString().trim();
+      if (html.isEmpty) {
+        return _ChunkResult(i, error: '缺少 translated_html');
+      }
+      return _ChunkResult(i, title: (title?.isNotEmpty == true) ? title : null, html: html);
+    } catch (e) {
+      return _ChunkResult(i, error: e.toString());
+    }
   }
 
   /// 按段落边界切割 HTML，每块 ≤ _chunkSize
@@ -609,4 +643,14 @@ HTML：
     }
     return null;
   }
+}
+
+// ─── 分块翻译结果 ─────────────────────────────
+
+final class _ChunkResult {
+  final int index;
+  final String? title;
+  final String? html;
+  final String? error;
+  _ChunkResult(this.index, {this.title, this.html, this.error});
 }
