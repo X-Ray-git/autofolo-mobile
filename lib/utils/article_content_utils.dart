@@ -12,12 +12,17 @@ abstract final class ArticleContentUtils {
   static String normalizeHtmlForEntry(String entryId, String rawHtml) {
     final cached = _cache[entryId];
     if (cached != null) return cached;
+
     if (_cache.length >= _cacheMax) {
       _cache.remove(_cache.keys.first);
     }
     final normalized = normalizeHtml(rawHtml);
     _cache[entryId] = normalized;
     return normalized;
+  }
+
+  static void clearCacheForEntry(String entryId) {
+    _cache.remove(entryId);
   }
 
   static const Set<String> _blockTags = {
@@ -219,5 +224,61 @@ abstract final class ArticleContentUtils {
     for (final el in toRemove) {
       el.remove();
     }
+  }
+
+  /// 提取核心正文算法（类似 Readability）
+  static dom.Element? getReadabilityContent(dom.Document document) {
+    // 1. Remove unwanted elements
+    final junk = document.querySelectorAll('script, style, noscript, nav, header, footer, aside, form, iframe, button');
+    for (final el in junk) {
+      el.remove();
+    }
+
+    // 2. Score paragraphs
+    final paragraphs = document.querySelectorAll('p, blockquote, article, div > text');
+    final candidates = <dom.Element, double>{};
+
+    for (final p in paragraphs) {
+      final text = p.text.trim();
+      if (text.length < 25) continue;
+
+      double score = 1.0;
+      score += text.length / 100.0;
+      score += text.split(',').length;
+      score += text.split('，').length;
+      score += text.split('。').length;
+
+      final parent = p.parent;
+      final grandParent = parent?.parent;
+
+      if (parent != null) {
+        candidates[parent] = (candidates[parent] ?? 0.0) + score;
+      }
+      if (grandParent != null) {
+        candidates[grandParent] = (candidates[grandParent] ?? 0.0) + (score / 2.0);
+      }
+    }
+
+    // 3. Find top candidate
+    dom.Element? topCandidate;
+    double topScore = 0;
+
+    candidates.forEach((el, score) {
+      final className = (el.attributes['class'] ?? '').toLowerCase();
+      final id = (el.attributes['id'] ?? '').toLowerCase();
+      
+      if (className.contains('comment') || id.contains('comment') || 
+          className.contains('sidebar') || id.contains('sidebar') ||
+          className.contains('menu') || id.contains('menu')) {
+        score *= 0.1;
+      }
+
+      if (score > topScore) {
+        topScore = score;
+        topCandidate = el;
+      }
+    });
+
+    return topCandidate;
   }
 }

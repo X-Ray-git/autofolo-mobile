@@ -305,7 +305,7 @@ abstract final class HtmlChunkParser {
       final childChunks = <HtmlChunk>[];
       for (final child in element.nodes) {
         if (child is dom.Element) {
-          _processElement(child, childChunks);
+          _processElement(child, childChunks, isEmail: isEmail);
         } else if (child is dom.Text) {
           final text = child.text.trim();
           if (text.isNotEmpty) {
@@ -324,7 +324,7 @@ abstract final class HtmlChunkParser {
       final childChunks = <HtmlChunk>[];
       for (final child in element.nodes) {
         if (child is dom.Element && child.localName?.toLowerCase() != 'figcaption') {
-          _processElement(child, childChunks);
+          _processElement(child, childChunks, isEmail: isEmail);
         } else if (child is dom.Text) {
           final text = child.text.trim();
           if (text.isNotEmpty) {
@@ -348,7 +348,7 @@ abstract final class HtmlChunkParser {
     final childChunks = <HtmlChunk>[];
     for (final child in element.nodes) {
       if (child is dom.Element) {
-        _processElement(child, childChunks);
+        _processElement(child, childChunks, isEmail: isEmail);
       } else if (child is dom.Text) {
         final text = child.text.trim();
         if (text.isNotEmpty) {

@@ -12,9 +12,7 @@ import '../../common/widgets/feedback_toast.dart';
 import '../../services/account_service.dart';
 import '../../services/content_cache_service.dart';
 import '../../services/local_article_db_service.dart';
-import '../../services/auto_translation_worker.dart';
-import '../../services/auto_summary_worker.dart';
-import '../../services/auto_filter_worker.dart';
+import '../../services/auto_readability_worker.dart';
 import '../../services/article_state_notifier.dart';
 import '../../services/read_sync_service.dart';
 import '../../utils/storage.dart';
@@ -181,9 +179,7 @@ class TimelineController extends GetxController {
     }
 
     LocalArticleDbService.upsertMany(unreadData, defaultReadState: false);
-    AutoFilterWorker.enqueueMany(unreadData);
-    AutoTranslationWorker.enqueueIfEnabledMany(unreadData);
-    AutoSummaryWorker.enqueueIfNeededMany(unreadData);
+    AutoReadabilityWorker.enqueueMany(unreadData);
     ContentCacheService.saveTimelineArticles(unreadData);
   }
 

@@ -19,12 +19,11 @@ import '../../services/account_service.dart';
 import '../../services/article_image_service.dart';
 import '../../services/content_cache_service.dart';
 import '../../services/local_article_db_service.dart';
-import '../../services/auto_translation_worker.dart';
-import '../../services/auto_summary_worker.dart';
-import '../../services/auto_filter_worker.dart';
+import '../../services/auto_readability_worker.dart';
 import '../../services/article_state_notifier.dart';
 import '../../services/read_sync_service.dart';
 import '../../services/feed_translation_settings_service.dart';
+import '../../services/feed_readability_settings_service.dart';
 import '../../utils/storage.dart';
 import '../widgets/article_card.dart';
 import '../timeline/timeline_controller.dart';
@@ -46,6 +45,7 @@ class FeedDetailController extends GetxController {
 
   final articles = <ArticleModel>[].obs;
   final isAutoTranslateEnabled = false.obs;
+  final isAutoReadabilityEnabled = false.obs;
   final readFilter = 0.obs; // 0=未读, 1=全部, 2=已读
   final allArticles = <ArticleModel>[].obs; // 全量（含已读）
 
@@ -65,6 +65,7 @@ class FeedDetailController extends GetxController {
     _cacheScope = filterFeedId ??
         'category:${filterCategory ?? 'view:${filterView ?? 'all'}'}';
     refreshAutoTranslateStatus();
+    refreshAutoReadabilityStatus();
     loadData();
     ever(ArticleStateNotifier.version, (_) => _refreshFromLocal());
   }
@@ -115,6 +116,16 @@ class FeedDetailController extends GetxController {
     }
     isAutoTranslateEnabled.value =
         FeedTranslationSettingsService.isAutoTranslateEnabled(feedId);
+  }
+
+  void refreshAutoReadabilityStatus() {
+    final feedId = filterFeedId;
+    if (feedId == null || feedId.isEmpty) {
+      isAutoReadabilityEnabled.value = false;
+      return;
+    }
+    isAutoReadabilityEnabled.value =
+        FeedReadabilitySettingsService.isAutoReadabilityEnabled(feedId);
   }
 
   Future<void> loadData() async {
@@ -320,9 +331,7 @@ class FeedDetailController extends GetxController {
     }
 
     LocalArticleDbService.upsertMany(unreadData, defaultReadState: false);
-    AutoFilterWorker.enqueueMany(unreadData);
-    AutoTranslationWorker.enqueueIfEnabledMany(unreadData);
-    AutoSummaryWorker.enqueueIfNeededMany(unreadData);
+    AutoReadabilityWorker.enqueueMany(unreadData);
   }
 
   Future<void> _refreshRecentReadWindow() async {
@@ -593,6 +602,28 @@ class FeedDetailPage extends StatelessWidget {
                         const PopupMenuItem(value: 2, child: Text('仅已读')),
                       ],
                     )),
+                // 强制提取长文
+                if (controller.filterFeedId != null)
+                  Obx(() {
+                    final isEnabled = controller.isAutoReadabilityEnabled.value;
+                    return IconButton(
+                      icon: Icon(
+                        isEnabled ? Icons.chrome_reader_mode : Icons.chrome_reader_mode_outlined,
+                        color: isEnabled ? cs.primary : cs.onSurfaceVariant,
+                      ),
+                      tooltip: isEnabled ? '强制全文提取已开启' : '开启强制全文提取',
+                      onPressed: () async {
+                        await FeedReadabilitySettingsService.toggleAutoReadability(
+                          controller.filterFeedId ?? '',
+                        );
+                        controller.refreshAutoReadabilityStatus();
+                        AppFeedback.success(
+                          isEnabled ? '强制全文提取已关闭' : '强制全文提取已开启',
+                          '仅对当前订阅源生效，下次同步时应用',
+                        );
+                      },
+                    );
+                  }),
                 // 自动翻译
                 if (controller.filterFeedId != null)
                   Obx(() {

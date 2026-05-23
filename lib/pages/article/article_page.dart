@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:dio/dio.dart';
+import 'package:html/parser.dart' as html_parser;
 
 import '../../http/feed_http.dart';
 import '../../http/init.dart';
@@ -40,6 +42,7 @@ class ArticleController extends GetxController {
   final summaryText = ''.obs;
   final isSummarized = false.obs;
   final isSummarizing = false.obs;
+  final isFetchingReadability = false.obs;
 
   ArticleController(this.article);
 
@@ -48,10 +51,20 @@ class ArticleController extends GetxController {
     super.onInit();
     isRead.value =
         GStorage.readStatus.get(article.entryId, defaultValue: false) as bool;
-    _initContent();
     if (article.category == 'inbox' &&
         (article.content == null || article.content!.trim().isEmpty)) {
       _fetchInboxContent();
+    } else if (article.content != null && article.content!.isNotEmpty) {
+      _initContent();
+      // 如果正文太短（比如只是一段摘要），自动尝试去原始链接抓取 Readability
+      if (article.content!.length < 500 && article.url.isNotEmpty) {
+        fetchReadabilityContent();
+      }
+    } else {
+      _initContent();
+      if (article.url.isNotEmpty) {
+        fetchReadabilityContent();
+      }
     }
   }
 
@@ -89,6 +102,28 @@ class ArticleController extends GetxController {
       _initContent(overrideContent: result.response);
       update(); // 通知 UI 重建
     }
+  }
+
+  Future<void> fetchReadabilityContent() async {
+    if (article.url.isEmpty) return;
+    
+    // We shouldn't block initialization, run async
+    Future.microtask(() async {
+      isFetchingReadability.value = true;
+      try {
+        final response = await Dio().get(article.url);
+        final htmlStr = response.data.toString();
+        final document = html_parser.parse(htmlStr);
+        final articleNode = ArticleContentUtils.getReadabilityContent(document);
+        if (articleNode != null) {
+          _initContent(overrideContent: articleNode.outerHtml);
+        }
+      } catch (e) {
+        // silently fail on auto-fetch
+      } finally {
+        isFetchingReadability.value = false;
+      }
+    });
   }
 
   /// 标为已读（本地 + 云端同步 + 失败重试最多 5 次）
@@ -712,19 +747,30 @@ class _ToolbarRow extends StatelessWidget {
       final hasTranslation = controller.isTranslated.value;
       final isSummarizing = controller.isSummarizing.value;
       final hasSummary = controller.isSummarized.value;
+      final isFetchingReadability = controller.isFetchingReadability.value;
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: Row(children: [
-          _Chip(cs: cs, icon: controller.showTranslation.value ? Icons.translate : Icons.translate_outlined,
-            label: isPending ? '翻译…' : hasTranslation ? '已译' : '翻译',
-            active: controller.showTranslation.value || isPending,
-            onTap: isPending ? null : hasTranslation ? () => controller.showTranslation.toggle() : () => controller.translateArticle()),
-          const SizedBox(width: 8),
-          _Chip(cs: cs, icon: hasSummary ? Icons.summarize : Icons.summarize_outlined,
-            label: isSummarizing ? '摘要…' : hasSummary ? '已摘要' : '摘要',
-            active: hasSummary || isSummarizing,
-            onTap: isSummarizing ? null : () => controller.summarizeArticle()),
-        ]),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            _Chip(cs: cs, icon: controller.showTranslation.value ? Icons.translate : Icons.translate_outlined,
+              label: isPending ? '翻译…' : hasTranslation ? '已译' : '翻译',
+              active: controller.showTranslation.value || isPending,
+              onTap: isPending ? null : hasTranslation ? () => controller.showTranslation.toggle() : () => controller.translateArticle()),
+            const SizedBox(width: 8),
+            _Chip(cs: cs, icon: hasSummary ? Icons.summarize : Icons.summarize_outlined,
+              label: isSummarizing ? '摘要…' : hasSummary ? '已摘要' : '摘要',
+              active: hasSummary || isSummarizing,
+              onTap: isSummarizing ? null : () => controller.summarizeArticle()),
+            if (isFetchingReadability) ...[
+              const SizedBox(width: 8),
+              _Chip(cs: cs, icon: Icons.sync,
+                label: '加载长文中…',
+                active: true,
+                onTap: null),
+            ]
+          ]),
+        ),
       );
     });
   }

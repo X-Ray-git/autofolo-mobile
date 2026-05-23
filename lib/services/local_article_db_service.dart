@@ -55,9 +55,17 @@ abstract final class LocalArticleDbService {
             : existing?.feedImage,
         title: item.title != '?' ? item.title : (existing?.title ?? '?'),
         url: item.url.isNotEmpty ? item.url : (existing?.url ?? ''),
-        content: (item.content != null && item.content!.isNotEmpty)
-            ? item.content
-            : existing?.content,
+        content: () {
+          final newItemContent = item.content ?? '';
+          final existingContent = existing?.content ?? '';
+          if (newItemContent.isNotEmpty && existingContent.isNotEmpty) {
+            // 如果本地已有长文（可能被 Readability 扩充过），而新同步的只是短摘要，则保留本地长文
+            if (existingContent.length > newItemContent.length + 100) {
+              return existingContent;
+            }
+          }
+          return newItemContent.isNotEmpty ? newItemContent : existingContent;
+        }(),
         publishedAt: item.publishedAt.isNotEmpty
             ? item.publishedAt
             : (existing?.publishedAt ?? ''),
