@@ -250,6 +250,7 @@ class ArticleController extends GetxController {
       final record = await TranslationService.translateArticle(
         article,
         targetLang: '简体中文',
+        overrideContent: normalizedContent,
       );
 
       if (record.translatedContent != null &&
@@ -262,7 +263,7 @@ class ArticleController extends GetxController {
         showTranslation.value = true;
         AppFeedback.success('翻译完成', '已生成文章译文');
       } else {
-        AppFeedback.error('翻译失败', '请检查网络连接和 API 配置');
+        AppFeedback.error('翻译失败', record.errorMessage ?? '请检查网络连接和 API 配置');
       }
     } catch (e) {
       AppFeedback.error('翻译出错', e.toString());
@@ -282,6 +283,7 @@ class ArticleController extends GetxController {
       final record = await SummaryService.summarizeArticle(
         article,
         targetLang: '简体中文',
+        overrideContent: normalizedContent,
       );
 
       if (record.summaryText != null && record.summaryText!.isNotEmpty) {
@@ -289,7 +291,7 @@ class ArticleController extends GetxController {
         isSummarized.value = true;
         AppFeedback.success('摘要完成', '已生成文章摘要');
       } else {
-        AppFeedback.error('摘要失败', '请检查网络连接和 API 配置');
+        AppFeedback.error('摘要失败', record.errorMessage ?? '请检查网络连接和 API 配置');
       }
     } catch (e) {
       AppFeedback.error('摘要出错', e.toString());
@@ -519,7 +521,7 @@ class _ArticlePageViewState extends State<ArticlePageView> {
           ),
         ),
         centerTitle: true,
-        backgroundColor: colorScheme.surface.withValues(alpha: 0.7),
+        backgroundColor: colorScheme.surface.withValues(alpha: 0.5),
         elevation: 0,
         scrolledUnderElevation: 0,
         flexibleSpace: ClipRect(
@@ -566,8 +568,9 @@ class _ArticlePageViewState extends State<ArticlePageView> {
           ),
         );
       }),
-      body: CustomScrollView(
-        controller: _scrollController,
+      body: SelectionArea(
+        child: CustomScrollView(
+          controller: _scrollController,
         slivers: [
           // ─── 元数据区域 ──────────────────────
           SliverPadding(
@@ -678,7 +681,7 @@ class _ArticlePageViewState extends State<ArticlePageView> {
           // 底部间距
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
-      ),
+      )),
     );
   }
 }

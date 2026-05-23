@@ -156,12 +156,13 @@ abstract final class TranslationService {
   static Future<TranslationRecord> translateArticle(
     ArticleModel article, {
     String targetLang = '简体中文',
+    String? overrideContent,
   }) {
     ensureHydrated();
     final existing = _inFlight[article.entryId];
     if (existing != null) return existing;
 
-    final future = _translateArticleInternal(article, targetLang);
+    final future = _translateArticleInternal(article, targetLang, overrideContent);
     _inFlight[article.entryId] = future;
     future.whenComplete(() {
       _inFlight.remove(article.entryId);
@@ -172,6 +173,7 @@ abstract final class TranslationService {
   static Future<TranslationRecord> _translateArticleInternal(
     ArticleModel article,
     String targetLang,
+    String? overrideContent,
   ) async {
     final apiKey = getApiKey();
     if (apiKey == null || apiKey.isEmpty) {
@@ -195,7 +197,7 @@ abstract final class TranslationService {
 
     final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
       article.entryId,
-      article.content ?? '',
+      overrideContent ?? article.content ?? '',
     );
     if (htmlContent.isEmpty) {
       final record = TranslationRecord(

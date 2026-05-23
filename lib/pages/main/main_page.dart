@@ -161,8 +161,8 @@ class _MainPageState extends State<MainPage> {
         scrolledUnderElevation: 0,
         flexibleSpace: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-            child: Container(color: colorScheme.surface.withValues(alpha: 0.85)),
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(color: colorScheme.surface.withValues(alpha: 0.50)),
           ),
         ),
         actions: [
@@ -211,7 +211,7 @@ class _MainPageState extends State<MainPage> {
       ),
       bottomNavigationBar: ClipRect(
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
               border: Border(
@@ -224,7 +224,7 @@ class _MainPageState extends State<MainPage> {
             child: Obx(() {
               return NavigationBar(
                 elevation: 0,
-                backgroundColor: colorScheme.surface.withValues(alpha: 0.40),
+                backgroundColor: colorScheme.surface.withValues(alpha: 0.50),
                 overlayColor: WidgetStateProperty.all(Colors.transparent),
                 indicatorColor: colorScheme.primary.withValues(alpha: 0.80),
                 indicatorShape: RoundedRectangleBorder(

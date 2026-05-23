@@ -126,12 +126,13 @@ abstract final class SummaryService {
   static Future<SummaryRecord> summarizeArticle(
     ArticleModel article, {
     String targetLang = '简体中文',
+    String? overrideContent,
   }) {
     ensureHydrated();
     final existing = _inFlight[article.entryId];
     if (existing != null) return existing;
 
-    final future = _summarizeArticleInternal(article, targetLang);
+    final future = _summarizeArticleInternal(article, targetLang, overrideContent);
     _inFlight[article.entryId] = future;
     future.whenComplete(() {
       _inFlight.remove(article.entryId);
@@ -142,6 +143,7 @@ abstract final class SummaryService {
   static Future<SummaryRecord> _summarizeArticleInternal(
     ArticleModel article,
     String targetLang,
+    String? overrideContent,
   ) async {
     final apiKey = getApiKey();
     if (apiKey == null || apiKey.isEmpty) {
@@ -165,7 +167,7 @@ abstract final class SummaryService {
 
     final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
       article.entryId,
-      article.content ?? '',
+      overrideContent ?? article.content ?? '',
     );
     if (htmlContent.isEmpty) {
       final record = SummaryRecord(
