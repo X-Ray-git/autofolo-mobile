@@ -67,7 +67,6 @@ class MainActivity : FlutterActivity() {
                     }
                     val result = client.call("change_badge", null, extra)
                     val ok = result?.getInt("result") == 0
-                    result?.recycle()
                     ok
                 } else false
             } finally {
