@@ -128,11 +128,7 @@ abstract final class TranslationService {
 
   static TranslationRecord? recordOf(String entryId) {
     ensureHydrated();
-    final r = _records[entryId];
-    if (r != null && r.status == TranslationStatus.pending) {
-      debugPrint('[Translation] ⚠️ recordOf($entryId) → still PENDING');
-    }
-    return r;
+    return _records[entryId];
   }
 
   static TranslationStatus statusOf(String entryId) {
@@ -156,7 +152,6 @@ abstract final class TranslationService {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     GStorage.translations.put(entryId, _records[entryId]!.toJson());
-    debugPrint('[Translation] ⏳ markPending: $entryId');
   }
 
   static String displayTitleFor(ArticleModel article) {
@@ -252,7 +247,6 @@ HTML：
 <html>$htmlContent</html>
 ''';
 
-    debugPrint('[Translation] 📄 ${article.entryId} htmlLen=${htmlContent.length} head=${htmlContent.length <= 200 ? htmlContent : htmlContent.substring(0, 200)}');
     try {
       _dio.options.headers['Authorization'] = 'Bearer $apiKey';
       _dio.options.headers['Content-Type'] = 'application/json';
@@ -282,13 +276,6 @@ HTML：
         parsed = jsonDecode(_normalizeJsonPayload(content))
             as Map<String, dynamic>;
       } on FormatException {
-        // JSON 解析失败（模型返回了未转义字符）→ 打印首尾便于定位
-        final head = content.length <= 300 ? content : content.substring(0, 300);
-        final tail = content.length > 300
-            ? content.substring(content.length - 100)
-            : '';
-        debugPrint('[Translation] 🔍 长度=${content.length} 首=$head');
-        if (tail.isNotEmpty) debugPrint('[Translation] 🔍 尾=$tail');
         final recovered = _extractJsonObject(content);
         if (recovered != null) {
           parsed = recovered;
@@ -316,11 +303,9 @@ HTML：
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
       _writeRecord(article.entryId, record);
-      debugPrint('[Translation] ✅ ${article.entryId}: ${article.title}');
       return record;
     } on DioException catch (e) {
       final error = e.message ?? 'DeepSeek request failed';
-      debugPrint('[Translation] ❌ ${article.entryId}: $error');
       _restoreAfterFailure(article.entryId, previous, error);
       return TranslationRecord(
         status: TranslationStatus.error,
@@ -328,7 +313,6 @@ HTML：
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
     } on FormatException catch (e) {
-      debugPrint('[Translation] ❌ ${article.entryId}: FormatException: ${e.message}');
       _restoreAfterFailure(article.entryId, previous, e.message);
       return TranslationRecord(
         status: TranslationStatus.error,
@@ -336,15 +320,13 @@ HTML：
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
     } on StateError catch (e) {
-      debugPrint('[Translation] ❌ ${article.entryId}: StateError: ${e.message}');
       _restoreAfterFailure(article.entryId, previous, e.message);
       return TranslationRecord(
         status: TranslationStatus.error,
         errorMessage: e.message,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
-    } catch (e, stack) {
-      debugPrint('[Translation] 💥 ${article.entryId}: 未捕获异常: $e\n$stack');
+    } catch (e) {
       _restoreAfterFailure(article.entryId, previous, e.toString());
       return TranslationRecord(
         status: TranslationStatus.error,
@@ -392,7 +374,6 @@ HTML：
         hasError = true;
         parts.add('');
       } else {
-        debugPrint('[Translation] 🧩 块 ${r.index}/${chunks.length} ✅');
         parts.add(r.html!);
         if (r.title != null) titleParts.add(r.title!);
       }
@@ -421,7 +402,6 @@ HTML：
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     _writeRecord(article.entryId, record);
-    debugPrint('[Translation] ✅ ${article.entryId}: ${article.title} (分块)');
     return record;
   }
 
