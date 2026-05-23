@@ -55,12 +55,9 @@ class ArticleController extends GetxController {
       _fetchInboxContent();
     } else if (article.content != null && article.content!.isNotEmpty) {
       _initContent();
-      // 如果正文太短（比如只是一段摘要），自动尝试去原始链接抓取 Readability
-      if (article.content!.length < 500 && article.url.isNotEmpty) {
-        fetchReadabilityContent();
-      }
     } else {
       _initContent();
+      // 正文完全为空时尝试抓取 Readability
       if (article.url.isNotEmpty) {
         fetchReadabilityContent();
       }

@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
+
+import '../http/init.dart';
 
 import '../models/article.dart';
 import '../utils/article_content_utils.dart';
@@ -60,19 +61,18 @@ abstract final class AutoReadabilityWorker {
 
     // 检查是否需要去抓取长文
     final rawContent = article.content ?? '';
-    final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(article.entryId, rawContent);
     final isManualForced = FeedReadabilitySettingsService.isAutoReadabilityEnabled(article.feedId);
 
     // 防重复拉取标记
     final hasFetchedKey = 'readability_fetched_${article.entryId}';
     final hasFetched = GStorage.setting.get(hasFetchedKey) == true;
 
-    // 如果未抓取过，且（开启了手动强制拉取，或者正文过短），且有原始链接，尝试抓取 Readability 长文
-    if (!hasFetched && (isManualForced || htmlContent.length < 500) && article.url.isNotEmpty) {
+    // 仅当该订阅源开启了 Readability 开关时才抓取长文
+    if (!hasFetched && isManualForced && article.url.isNotEmpty) {
       // 立即打上标记，防止无论成功失败都反复重试
       GStorage.setting.put(hasFetchedKey, true);
       try {
-        final response = await Dio().get(article.url);
+        final response = await Request.dio.get(article.url);
         final document = html_parser.parse(response.data.toString());
         final node = ArticleContentUtils.getReadabilityContent(document);
         if (node != null) {
