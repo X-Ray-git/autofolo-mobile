@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -27,12 +26,10 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   void initState() {
     super.initState();
     _loadArticles();
-    // 注册增量推送回调
     AutoFilterWorker.onRejected = (entryId, title, reason) {
       if (!mounted) return;
       if (_seenIds.contains(entryId)) return;
       _seenIds.add(entryId);
-      // 从 DB 或内存中获取完整 article
       final raw = GStorage.articleDb.get(entryId);
       if (raw is Map) {
         final article = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
@@ -65,20 +62,16 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     _articles.value = all;
   }
 
-  // 恢复 (Keep)
   void _keep(ArticleModel article) {
     ArticleStateNotifier.tick(article.entryId);
     AutoFilterWorker.unReject(article.entryId);
-    AutoFilterWorker.unReject(article.entryId); // 冗余调用以确保状态更新
     if (Get.isRegistered<TimelineController>()) {
       Get.find<TimelineController>().markAsUnreadLocal(article.entryId);
     }
     setState(() => _articles.removeWhere((a) => a.entryId == article.entryId));
   }
 
-  // 彻底拒绝 (Reject)
   void _reject(ArticleModel article) {
-    // 标记已审核，防止重判
     LocalArticleDbService.upsertOne(ArticleModel(
       entryId: article.entryId,
       feedId: article.feedId,
@@ -97,7 +90,6 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
       filterReason: article.filterReason,
       filterReviewed: true,
     ));
-    // 标已读
     if (Get.isRegistered<TimelineController>()) {
       Get.find<TimelineController>().markAsReadLocal(article.entryId);
     } else {
@@ -110,233 +102,232 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     setState(() => _articles.removeWhere((a) => a.entryId == article.entryId));
   }
 
-  void _rejectAll() {
-    for (final a in List.from(_articles)) {
-      _reject(a);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        backgroundColor: cs.surface.withValues(alpha: 0.7),
+        backgroundColor: cs.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        flexibleSpace: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(color: Colors.transparent),
-          ),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(0.5),
+          child: Divider(height: 0.5, thickness: 0.5),
         ),
         title: const Text('垃圾拦截'),
-        actions: [
-          Obx(() {
-            final q = AutoFilterWorker.queuedCount.value;
-            final p = AutoFilterWorker.processingCount.value;
-            if (q == 0 && p == 0) return const SizedBox.shrink();
-            
-            return Center(
-              child: Container(
-                margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: cs.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 10,
-                      height: 10,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: cs.onPrimaryContainer,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '判定中 ${q + p}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: cs.onPrimaryContainer,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-        ],
       ),
-      body: Obx(() => _articles.isEmpty
-          ? _buildEmptyState(cs)
-          : Column(
-              children: [
-                // 进度条
-                Obx(() {
-                  final q = AutoFilterWorker.queuedCount.value;
-                  final p = AutoFilterWorker.processingCount.value;
-                  if (q == 0 && p == 0) return const SizedBox.shrink();
-                  return LinearProgressIndicator(
-                    value: p > 0 ? null : 0,
-                    minHeight: 2,
-                    backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
-                  );
-                }),
-                Expanded(
-                  child: ListView.builder(
-                    padding: EdgeInsets.only(
-                      top: 6,
-                      bottom: 16 + MediaQuery.of(context).padding.bottom,
-                    ),
-                    itemCount: _articles.length,
-                    itemBuilder: (context, index) {
-                      final article = _articles[index];
-                      return Dismissible(
-                        key: ValueKey(article.entryId),
-                        direction: DismissDirection.horizontal,
-                        dismissThresholds: const {
-                          DismissDirection.startToEnd: 0.35,
-                          DismissDirection.endToStart: 0.35,
-                        },
-                        confirmDismiss: (direction) async {
-                          if (direction == DismissDirection.startToEnd) {
-                            // 右滑 = 恢复 (Keep)
-                            _keep(article);
-                          } else {
-                            // 左滑 = 彻底拒绝 (Reject)
-                            _reject(article);
-                          }
-                          return false; // 手动管理数组移除并利用 setState 刷新
-                        },
-                        // 右滑背景（恢复文章）
-                        background: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              color: const Color(0xFF10B981), // 生机绿
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.only(left: 24),
-                              child: const Icon(Icons.restore_rounded, color: Colors.white, size: 28),
-                            ),
-                          ),
-                        ),
-                        // 左滑背景（彻底删除）
-                        secondaryBackground: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              color: cs.error, // 警告红
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.only(right: 24),
-                              child: const Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 28),
-                            ),
-                          ),
-                        ),
-                        child: ArticleCard(
-                          article: article,
-                          showFeedTitle: true,
-                          onTap: () {
-                            Get.toNamed(Routes.article, arguments: {
-                              'article': article,
-                              'sequence': _articles,
-                              'index': index,
-                            });
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+      body: Obx(() {
+        final humanCount = _articles.length;
+        final q = AutoFilterWorker.queuedCount.value;
+        final p = AutoFilterWorker.processingCount.value;
+        final llmActive = q > 0 || p > 0;
+
+        return Column(
+          children: [
+            _StatusPills(
+              cs: cs,
+              humanCount: humanCount,
+              llmCount: q + p,
+              llmActive: llmActive,
             ),
-          ),
+            Expanded(
+              child: _articles.isEmpty
+                  ? _buildEmptyState(cs, llmActive: llmActive, llmCount: q + p)
+                  : ListView.builder(
+                      padding: EdgeInsets.only(
+                        top: 6,
+                        bottom: 16 + MediaQuery.of(context).padding.bottom,
+                      ),
+                      itemCount: _articles.length,
+                      itemBuilder: (context, index) {
+                        final article = _articles[index];
+                        return Dismissible(
+                          key: ValueKey(article.entryId),
+                          direction: DismissDirection.horizontal,
+                          dismissThresholds: const {
+                            DismissDirection.startToEnd: 0.35,
+                            DismissDirection.endToStart: 0.35,
+                          },
+                          confirmDismiss: (direction) async {
+                            if (direction == DismissDirection.startToEnd) {
+                              _keep(article);
+                            } else {
+                              _reject(article);
+                            }
+                            return false;
+                          },
+                          background: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                color: const Color(0xFF10B981),
+                                alignment: Alignment.centerLeft,
+                                padding: const EdgeInsets.only(left: 24),
+                                child: const Icon(Icons.restore_rounded,
+                                    color: Colors.white, size: 28),
+                              ),
+                            ),
+                          ),
+                          secondaryBackground: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                color: cs.error,
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 24),
+                                child: const Icon(Icons.delete_sweep_rounded,
+                                    color: Colors.white, size: 28),
+                              ),
+                            ),
+                          ),
+                          child: ArticleCard(
+                            article: article,
+                            showFeedTitle: true,
+                            onTap: () {
+                              Get.toNamed(Routes.article, arguments: {
+                                'article': article,
+                                'sequence': _articles,
+                                'index': index,
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      }),
     );
   }
 
-  // 统一的优雅空状态
-  Widget _buildEmptyState(ColorScheme cs) {
+  Widget _buildEmptyState(ColorScheme cs,
+      {required bool llmActive, required int llmCount}) {
+    final bool allDone = !llmActive;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: cs.primaryContainer.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.shield_outlined,
-                size: 56,
-                color: cs.primary,
-              ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: allDone
+                  ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                  : cs.primaryContainer.withValues(alpha: 0.5),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 24),
-            Text(
-              '非常清爽',
+            child: Icon(
+              allDone ? Icons.check_circle_outline : Icons.shield_outlined,
+              size: 56,
+              color: allDone ? const Color(0xFF10B981) : cs.primary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(allDone ? '处理完毕' : '暂无待处理内容',
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: cs.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: cs.onSurface)),
+          const SizedBox(height: 8),
+          if (llmActive)
+            _LlmPill(cs: cs, count: llmCount)
+          else
             Text(
-              '当前没有待审核的垃圾文章\nAI 过滤系统正在默默守护你的阅读流',
-              style: TextStyle(
-                fontSize: 14,
-                color: cs.onSurfaceVariant,
-                height: 1.6,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            Obx(() {
-              final q = AutoFilterWorker.queuedCount.value;
-              final p = AutoFilterWorker.processingCount.value;
-              if (q > 0 || p > 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 24),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '后台正在判定: $q 排队, $p 处理中',
-                          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            }),
-          ],
-        ),
+                allDone
+                    ? '所有文章已审核，阅读流保持清爽'
+                    : 'AI 过滤系统正在默默守护你的阅读流',
+                style: TextStyle(
+                    fontSize: 14,
+                    color: cs.onSurfaceVariant,
+                    height: 1.6),
+                textAlign: TextAlign.center),
+        ]),
       ),
+    );
+  }
+}
+
+// ── 状态药片行 ──────────
+class _StatusPills extends StatelessWidget {
+  final ColorScheme cs;
+  final int humanCount;
+  final int llmCount;
+  final bool llmActive;
+
+  const _StatusPills({
+    required this.cs,
+    required this.humanCount,
+    required this.llmCount,
+    required this.llmActive,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: humanCount > 0
+                ? cs.primary.withValues(alpha: 0.12)
+                : cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.touch_app,
+                size: 13,
+                color: humanCount > 0 ? cs.primary : cs.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text('$humanCount 篇待处理',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: humanCount > 0 ? cs.primary : cs.onSurfaceVariant)),
+          ]),
+        ),
+        if (llmActive) ...[
+          const SizedBox(width: 8),
+          _LlmPill(cs: cs, count: llmCount),
+        ],
+      ]),
+    );
+  }
+}
+
+class _LlmPill extends StatelessWidget {
+  final ColorScheme cs;
+  final int count;
+
+  const _LlmPill({required this.cs, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: cs.onSurfaceVariant)),
+        const SizedBox(width: 6),
+        Text('$count 篇判定中',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: cs.onSurfaceVariant)),
+      ]),
     );
   }
 }
