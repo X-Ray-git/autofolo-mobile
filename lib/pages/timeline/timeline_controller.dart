@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:intl/intl.dart';
 import 'package:get/get.dart';
-import 'package:flutter_app_badger/flutter_app_badger.dart';
+import '../../common/widgets/app_badger.dart';
 
 import '../../common/constants/constants.dart';
 import '../../http/feed_http.dart';
@@ -314,18 +314,18 @@ class TimelineController extends GetxController {
       defaultValue: 'unread_count',
     );
     if (strategy == 'off') {
-      FlutterAppBadger.removeBadge();
+      AppBadger.removeBadge();
       return;
     }
     
     final unread = unreadCount;
     if (unread == 0) {
-      FlutterAppBadger.removeBadge();
+      AppBadger.removeBadge();
     } else {
       if (strategy == 'dot_only') {
-        FlutterAppBadger.updateBadgeCount(1);
+        AppBadger.updateBadgeCount(1);
       } else {
-        FlutterAppBadger.updateBadgeCount(unread);
+        AppBadger.updateBadgeCount(unread);
       }
     }
   }
