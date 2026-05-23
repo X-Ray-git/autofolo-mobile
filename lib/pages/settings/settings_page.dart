@@ -270,6 +270,38 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: 32),
 
+          // 通知与角标
+          Text(
+            '通知与角标',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '控制桌面图标角标显示',
+            style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 16),
+
+          DropdownButtonFormField<String>(
+            value: _badgeStrategy,
+            decoration: const InputDecoration(
+              labelText: '桌面角标显示规则',
+              border: OutlineInputBorder(),
+              helperText: '退到后台后图标右上角的红点行为',
+            ),
+            items: const [
+              DropdownMenuItem(value: 'unread_count', child: Text('显示未读数量')),
+              DropdownMenuItem(value: 'dot_only', child: Text('仅显示红点')),
+              DropdownMenuItem(value: 'off', child: Text('关闭角标')),
+            ],
+            onChanged: (val) {
+              if (val != null) setState(() => _badgeStrategy = val);
+            },
+          ),
+
+          const SizedBox(height: 32),
+
           // DeepSeek 翻译服务
           Text(
             '翻译服务设置',
@@ -318,25 +350,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          ),
-
-          const SizedBox(height: 16),
-
-          DropdownButtonFormField<String>(
-            value: _badgeStrategy,
-            decoration: const InputDecoration(
-              labelText: '桌面角标显示规则',
-              border: OutlineInputBorder(),
-              helperText: '配置应用在退到后台时，桌面图标右上角的红点行为',
-            ),
-            items: const [
-              DropdownMenuItem(value: 'unread_count', child: Text('显示未读文章数量')),
-              DropdownMenuItem(value: 'dot_only', child: Text('有未读时仅显示红点')),
-              DropdownMenuItem(value: 'off', child: Text('关闭桌面角标')),
-            ],
-            onChanged: (val) {
-              if (val != null) setState(() => _badgeStrategy = val);
-            },
           ),
 
           const SizedBox(height: 24),
