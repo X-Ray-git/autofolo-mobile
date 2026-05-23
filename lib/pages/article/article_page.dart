@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
 
 import '../../http/feed_http.dart';
@@ -111,7 +110,7 @@ class ArticleController extends GetxController {
     Future.microtask(() async {
       isFetchingReadability.value = true;
       try {
-        final response = await Dio().get(article.url);
+        final response = await Request.dio.get(article.url);
         final htmlStr = response.data.toString();
         final document = html_parser.parse(htmlStr);
         final articleNode = ArticleContentUtils.getReadabilityContent(document);
