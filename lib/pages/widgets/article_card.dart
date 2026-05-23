@@ -416,7 +416,7 @@ class _ArticleCardContent extends StatelessWidget {
                   color: textColor,
                   height: 1.5,
                 ),
-                maxLines: 2,
+                maxLines: 4,
                 overflow: TextOverflow.ellipsis,
               ),
             ),

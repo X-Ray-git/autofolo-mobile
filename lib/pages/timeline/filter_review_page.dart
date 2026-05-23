@@ -116,7 +116,8 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
           preferredSize: Size.fromHeight(0.5),
           child: Divider(height: 0.5, thickness: 0.5),
         ),
-        title: const Text('垃圾拦截'),
+        title: const Text('垃圾拦截',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
       ),
       body: Obx(() {
         final humanCount = _articles.length;
