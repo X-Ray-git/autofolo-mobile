@@ -42,6 +42,7 @@ class ArticleController extends GetxController {
   final isSummarized = false.obs;
   final isSummarizing = false.obs;
   final isFetchingReadability = false.obs;
+  final isFetchingContent = false.obs;
 
   ArticleController(this.article);
 
@@ -52,12 +53,13 @@ class ArticleController extends GetxController {
         GStorage.readStatus.get(article.entryId, defaultValue: false) as bool;
     if (article.category == 'inbox' &&
         (article.content == null || article.content!.trim().isEmpty)) {
+      isFetchingContent.value = true;
       _fetchInboxContent();
     } else if (article.content != null && article.content!.isNotEmpty) {
       _initContent();
     } else {
       _initContent();
-      // 正文完全为空时尝试抓取 Readability
+      isFetchingContent.value = true;
       if (article.url.isNotEmpty) {
         fetchReadabilityContent();
       }
@@ -98,6 +100,7 @@ class ArticleController extends GetxController {
       _initContent(overrideContent: result.response);
       update(); // 通知 UI 重建
     }
+    isFetchingContent.value = false;
   }
 
   Future<void> fetchReadabilityContent() async {
@@ -118,6 +121,7 @@ class ArticleController extends GetxController {
         // silently fail on auto-fetch
       } finally {
         isFetchingReadability.value = false;
+        isFetchingContent.value = false;
       }
     });
   }
@@ -639,29 +643,40 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                 return SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Column(
-                      children: [
-                        Icon(Icons.article_outlined,
-                            size: 48,
-                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
-                        const SizedBox(height: 12),
-                        Text(
-                          '暂无正文内容',
-                          style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500),
-                        ),
-                        if (controller.article.url.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            icon: const Icon(Icons.open_in_browser, size: 18),
-                            label: const Text('在浏览器中查看原文'),
-                            onPressed: () => controller.openInBrowser(),
-                          ),
-                        ],
-                      ],
-                    ),
+                    child: controller.isFetchingContent.value
+                        ? Column(children: [
+                            const SizedBox(height: 32),
+                            SizedBox(
+                              width: 24, height: 24,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: colorScheme.primary.withValues(alpha: 0.6)),
+                            ),
+                            const SizedBox(height: 16),
+                            Text('正在加载正文…',
+                                style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 14)),
+                          ])
+                        : Column(children: [
+                            Icon(Icons.article_outlined,
+                                size: 48,
+                                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                            const SizedBox(height: 12),
+                            Text('暂无正文内容',
+                                style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500)),
+                            if (controller.article.url.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                icon: const Icon(Icons.open_in_browser, size: 18),
+                                label: const Text('在浏览器中查看原文'),
+                                onPressed: () => controller.openInBrowser(),
+                              ),
+                            ],
+                          ]),
                   ),
                 );
               }
