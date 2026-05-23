@@ -1506,6 +1506,10 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 - **去除重复**：卡片自带拒文标签（§40），审核页不再额外显示判定原因
 - **架构**：`_StatusPills` 和 `_LlmPill` 提升为文件级私有组件
 
+### Vivo / OriginOS 桌面角标适配（待完成）
+
+Vivo 提供私有 ContentProvider API（`content://com.vivo.abe.provider.launcher.notification.num`）可直写角标。`MainActivity.kt` 已实现 `tryVivoBadge` + 通知兜底，但当前不生效。排查方向：查看 logcat 返回码、确认系统桌面角标开关、验证权限未被静默拦截。详见 vivo 开发者文档。
+
 ## 45. 最终打磨与 v1.0.0-beta1 发布（2026-05-23）
 
 ### 导航栏玻璃质感调优
@@ -1547,57 +1551,6 @@ Folo 桌面端用 HTML5 `<video>` 标签直接播放 mp4，移动端用 `expo-vi
 10. 设置页副标题 + FeedbackToast 重写
 
 Tag: `v1.0.0-beta1` — 功能完备（AI 过滤 + 翻译 + 摘要），橙色主题，全 UI 打磨。
-## 43. 审核页重塑 — 实时状态药片（2026-05-23）
-
-审核页（FilterReviewPage）从"判定中" + "全部确认"的旧设计完全重构：
-
-- **AppBar 对齐主时间线**：居中标题"垃圾拦截"，0.5px 分割线，移除毛玻璃、判定徽标、"全部确认"按钮
-- **状态药片行**（AppBar 与列表之间）：
-  - `✋ N 篇待处理`：始终显示，0 篇时灰色，>0 篇时主色高亮
-  - `🤖 N 篇判定中`：仅 LLM Worker 活跃时显示，灰色底 + 微型 spinner
-- **实时性**：`humanCount` 由 `_articles.length` + `Obx` 驱动；`llmCount` 由 `AutoFilterWorker.queuedCount/processingCount`（RxInt）驱动；每篇卡片滑动后当场跳数
-- **空状态终结感**：全部处理完时图标变绿对勾 + "处理完毕"
-- **去除重复**：卡片自带拒文标签（§40），审核页不再额外显示判定原因
-- **架构**：`_StatusPills` 和 `_LlmPill` 提升为文件级私有组件
-
-### Vivo / OriginOS 桌面角标适配（待完成）
-
-**当前状态**：Vivo 上不显示未读数字角标。
-
-**方案**：Vivo 提供私有 ContentProvider API，可直写角标数字而无需通知栏残留。
-
-**权限**（已添加到 AndroidManifest.xml）：
-```xml
-<uses-permission android:name="com.vivo.abe.permission.launcher.notification.num" />
-```
-
-**接口地址**：`content://com.vivo.abe.provider.launcher.notification.num`
-
-**调用方式**（Java，需转为 Kotlin）：
-```java
-Uri uri = Uri.parse("content://com.vivo.abe.provider.launcher.notification.num");
-Bundle extra = new Bundle();
-extra.putString("package", 包名);
-extra.putString("class", 包名.MainActivity);
-extra.putInt("badgenumber", 角标数);
-ContentProviderClient client = getContentResolver()
-    .acquireUnstableContentProviderClient(uri);
-int result = client.call("change_badge", null, extra).getInt("result");
-// result == 0 表示成功
-```
-
-**当前问题**：`MainActivity.kt` 中已实现该逻辑（`tryVivoBadge`），但未生效。可能原因：
-- `change_badge` 返回非 0 状态码（需查看具体返回码定位，如 1022=权限未配置，2005=应用角标开关未开）
-- Vivo 桌面角标开关需用户在系统设置中手动开启：「设置 → 通知与状态栏 → 应用通知管理 → Auto Folo → 桌面角标」
-- `className` 需与启动 Activity 完全匹配
-
-**接下来排查方向**：
-1. 在 `tryVivoBadge` 中打印 `result.getInt("result")` 到 logcat，确定返回码
-2. 确认系统桌面角标总开关是否开启
-3. 确认权限是否被系统拦截（Vivo 可能静默拒绝）
-4. 如仍不行，可尝试 Vpush（vivo 推送）方案替代
-
-**参考文档**：vivo 开发者文档「桌面图标角标适配说明」— `https://dev.vivo.com.cn/`
 
 ## 46. 仓库管理规范（2026-05-23）
 
@@ -1660,3 +1613,30 @@ int result = client.call("change_badge", null, extra).getInt("result");
 - **`lib/pages/timeline/timeline_page.dart`**：
   - 保持默认不传入该参数，维持正式时间线不显示摘要。
 
+## 48. 通知角标 + 退后台（2026-05-23）
+
+- 新增「通知与角标」设置区块：下拉选择桌面角标规则（显示数量 / 仅红点 / 关闭）
+- 设置页重新布局：角标从翻译区块中独立出来
+- 按安卓返回键退到后台（`PopScope` + `MainActivity.kt` 原生处理）
+- 自写 `AppBadger`（MethodChannel `com.autofolo/badge`），完全移除 `flutter_app_badger` 依赖
+- 自写 `MoveToBackground`（MethodChannel `com.autofolo/move_to_background`），完全移除 `move_to_background` 依赖
+- 外来依赖归零，所有原生交互通过自写 MethodChannel + `MainActivity.kt` 控制
+
+## 49. 正文加载 + 数据持久化（2026-05-23）
+
+- **Inbox 文章首次打开**：`_fetchInboxContent()` 拉取后自动 `upsertOne()` 写入本地 DB，再次打开直接读库，不再重复拉取
+- **Readability 抓取**：`fetchReadabilityContent()` 成功后同样持久化
+- **加载中状态**：新增 `isFetchingContent` observable，空正文时显示旋转菊花 + "正在加载正文…"，替代原来的"暂无正文内容"闪烁
+
+## 50. 译文/摘要内容传递修正（2026-05-23）
+
+- `TranslationService.translateArticle()` 和 `SummaryService.summarizeArticle()` 新增 `overrideContent` 参数
+- 文章页触发翻译/摘要时传入已标准化的 `normalizedContent`，确保 Readability 抓取后的长文被正确用于翻译和摘要
+
+## 51. UI 细节打磨（2026-05-23）
+
+- 审核页 AppBar 标题字体对齐主时间线（`FontWeight.bold, fontSize: 17`）
+- 卡片内 AI 摘要预览 `maxLines` 从 2 扩展到 4
+- 文章页 `CustomScrollView` 外包 `SelectionArea`，正文可选中复制
+- 文章详情页 API 错误提示改用服务端返回的 `errorMessage`
+- 主页面玻璃参数微调（模糊 20、透明度 0.50）
