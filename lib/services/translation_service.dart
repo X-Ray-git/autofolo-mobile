@@ -105,9 +105,9 @@ abstract final class TranslationService {
         // 清理残留的 pending 状态（App 被杀/崩溃导致）
         if (record.status == TranslationStatus.pending) {
           staleCount++;
+          box.delete(key); // 从磁盘移除旧版残留，后续 pending 不再落盘
           _records[key] = record.copyWith(
             status: TranslationStatus.idle,
-            errorMessage: '上一次翻译未完成（已自动恢复）',
           );
         } else {
           _records[key] = record;
