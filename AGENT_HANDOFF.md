@@ -1686,3 +1686,10 @@ Tag: `v1.0.0-beta2`
 ### 48.3 正文 DOM 懒加载设置开关
 - **需求**：由于“一次性全量渲染”可能会在低端设备上引发卡顿或崩溃，我们需要把控制权交给用户。
 - **实现**：在设置页 (`SettingsPage`) 新增“渲染与性能”区块，加入了“正文 DOM 懒加载”开关（默认关闭）。旁边的 Info 按钮会弹出对话框，向高级用户明确解释“内存开销”与“阅读进度条精确度”之间的技术博弈。状态保存在 `GStorage.setting` 中，由 `article_page.dart` 实时读取并动态切换 `SliverList` 或 `SliverToBoxAdapter` 机制。
+
+## 49. 遗留问题与已知缺陷 (2026-05-24)
+
+### 49.1 特定长文/复杂排版文章卡顿问题
+- **现象**：文章《Tencent Open-Sources TencentDB Agent Memory: A 4-Tier Local Memory Pipeline for AI Agents》在渲染和滚动时存在轻微卡顿。
+- **状态**：该问题在 `main` 和 `fix-video-summary-ui` 分支均存在，属于历史遗留或 `flutter_html` 针对特定 DOM 结构（可能是超长的 `<pre>`、深层嵌套或者特定的 Markdown 转换残留）的解析性能瓶颈。
+- **建议**：后续需要对这类出现卡顿的特殊文章进行 Profile，分析是在布局计算 (Layout) 还是 `HtmlChunkParser` 解析时耗时过长。可能需要对 `flutter_html` 的特定组件进行缓存优化，或者针对超大代码块增加局部懒加载机制。

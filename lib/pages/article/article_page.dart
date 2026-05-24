@@ -23,6 +23,7 @@ import '../../utils/security_utils.dart';
 import '../../utils/storage.dart';
 import '../timeline/timeline_controller.dart';
 import 'widgets/html_chunk_card.dart';
+import 'package:flutter_html/flutter_html.dart';
 import 'widgets/image_gallery_page.dart';
 import '../../common/widgets/hero_dialog_route.dart';
 
@@ -907,7 +908,29 @@ class _SummaryCard extends StatelessWidget {
                     color: Theme.of(context).colorScheme.secondary)),
               ]),
               const SizedBox(height: 8),
-              Text(summary, style: const TextStyle(fontSize: 14, height: 1.5)),
+              Html(
+                data: summary,
+                style: {
+                  'body': Style(
+                    fontSize: FontSize(14),
+                    lineHeight: const LineHeight(1.5),
+                    margin: Margins.zero,
+                    padding: HtmlPaddings.zero,
+                  ),
+                  'a': Style(
+                    color: Theme.of(context).colorScheme.primary,
+                    textDecoration: TextDecoration.none,
+                  ),
+                },
+                onLinkTap: (url, _, __) async {
+                  if (url != null && url.isNotEmpty) {
+                    final uri = Uri.tryParse(url);
+                    if (uri != null && await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  }
+                },
+              ),
             ],
           ),
         ),
