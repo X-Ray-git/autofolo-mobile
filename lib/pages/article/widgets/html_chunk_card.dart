@@ -145,14 +145,28 @@ class HtmlChunkCard extends StatelessWidget {
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Text(
-          chunk.content,
-          style: TextStyle(
-            fontFamily: 'monospace',
-            fontSize: 13,
-            color: cs.onSurface,
-            height: 1.5,
-          ),
+        child: Html(
+          data: chunk.content,
+          style: {
+            'body': Style(
+              margin: Margins.zero,
+              padding: HtmlPaddings.zero,
+            ),
+            'pre': Style(
+              margin: Margins.zero,
+              padding: HtmlPaddings.zero,
+              fontFamily: 'monospace',
+              fontSize: FontSize(13),
+              color: cs.onSurface,
+              lineHeight: const LineHeight(1.5),
+              whiteSpace: WhiteSpace.pre,
+            ),
+            'code': Style(
+              fontFamily: 'monospace',
+              fontSize: FontSize(13),
+              backgroundColor: Colors.transparent,
+            ),
+          },
         ),
       ),
     );

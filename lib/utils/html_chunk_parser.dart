@@ -59,8 +59,7 @@ class HtmlChunk {
 abstract final class HtmlChunkParser {
   static const int _isolateThresholdBytes = 500 * 1024;
 
-  static const _blockTags = {
-    'p',
+  static const _containerTags = {
     'div',
     'section',
     'article',
@@ -68,7 +67,6 @@ abstract final class HtmlChunkParser {
     'footer',
     'main',
     'aside',
-    // 'figure' and 'figcaption' handled specially below
   };
 
   static const _headingTags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'};
@@ -162,7 +160,7 @@ abstract final class HtmlChunkParser {
     for (final child in nodes) {
       if (child is dom.Element) {
         final tag = child.localName?.toLowerCase() ?? '';
-        final isBlockLike = _blockTags.contains(tag) || 
+        final isBlockLike = _containerTags.contains(tag) || tag == 'p' || 
                             _headingTags.contains(tag) || 
                             tag == 'table' || 
                             tag == 'ul' || tag == 'ol' || 
@@ -253,11 +251,11 @@ abstract final class HtmlChunkParser {
       return;
     }
 
-    // 代码块
+    // 代码块 - 保留 outerHtml 以保留原始格式与色彩
     if (tag == 'pre' || tag == 'code') {
       chunks.add(HtmlChunk(
         type: HtmlChunkType.codeBlock,
-        content: element.text.trim(),
+        content: element.outerHtml.trim(),
       ));
       return;
     }
@@ -324,8 +322,14 @@ abstract final class HtmlChunkParser {
       return;
     }
 
-    // 块级容器 → 递归处理子节点
-    if (_blockTags.contains(tag)) {
+    // 容器标签 → 强制递归处理子节点，避免巨大富文本
+    if (_containerTags.contains(tag)) {
+      _processMixedNodes(element.nodes, chunks, isEmail);
+      return;
+    }
+
+    // 段落标签
+    if (tag == 'p') {
       if (!_hasMediaDescendant(element)) {
         final content = element.innerHtml.trim();
         if (content.isNotEmpty) {
@@ -438,11 +442,18 @@ abstract final class HtmlChunkParser {
       if (merged.isNotEmpty &&
           merged.last.type == HtmlChunkType.paragraph &&
           chunk.type == HtmlChunkType.paragraph) {
-        // 合并文本
-        merged.last = HtmlChunk(
-          type: HtmlChunkType.paragraph,
-          content: '${merged.last.content}\n\n${chunk.content}',
-        );
+        
+        final combinedLength = merged.last.content.length + chunk.content.length;
+        if (combinedLength > 1500) {
+          // 合并后过长，强制断开，保护渲染性能
+          merged.add(chunk);
+        } else {
+          // 合并文本
+          merged.last = HtmlChunk(
+            type: HtmlChunkType.paragraph,
+            content: '${merged.last.content}\n\n${chunk.content}',
+          );
+        }
       } else {
         merged.add(chunk);
       }
