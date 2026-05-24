@@ -116,8 +116,54 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
           preferredSize: Size.fromHeight(0.5),
           child: Divider(height: 0.5, thickness: 0.5),
         ),
-        title: const Text('垃圾拦截',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+        title: Obx(() {
+          final humanCount = _articles.length;
+          final q = AutoFilterWorker.queuedCount.value;
+          final p = AutoFilterWorker.processingCount.value;
+          final llmActive = q > 0 || p > 0;
+          final llmCount = q + p;
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('垃圾拦截',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              if (humanCount > 0 || llmActive)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (humanCount > 0) ...[
+                        Icon(Icons.touch_app, size: 12, color: cs.primary),
+                        const SizedBox(width: 4),
+                        Text('$humanCount 篇待处理',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: cs.primary)),
+                      ],
+                      if (humanCount > 0 && llmActive)
+                        Text('  ·  ',
+                            style: TextStyle(
+                                fontSize: 12, color: cs.onSurfaceVariant)),
+                      if (llmActive) ...[
+                        SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: cs.onSurfaceVariant)),
+                        const SizedBox(width: 4),
+                        Text('$llmCount 篇判定中',
+                            style: TextStyle(
+                                fontSize: 12, color: cs.onSurfaceVariant)),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          );
+        }),
       ),
       body: Obx(() {
         final humanCount = _articles.length;
@@ -127,12 +173,6 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
 
         return Column(
           children: [
-            _StatusPills(
-              cs: cs,
-              humanCount: humanCount,
-              llmCount: q + p,
-              llmActive: llmActive,
-            ),
             Expanded(
               child: _articles.isEmpty
                   ? _buildEmptyState(cs, llmActive: llmActive, llmCount: q + p)
@@ -256,53 +296,6 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
 }
 
 // ── 状态药片行 ──────────
-class _StatusPills extends StatelessWidget {
-  final ColorScheme cs;
-  final int humanCount;
-  final int llmCount;
-  final bool llmActive;
-
-  const _StatusPills({
-    required this.cs,
-    required this.humanCount,
-    required this.llmCount,
-    required this.llmActive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: humanCount > 0
-                ? cs.primary.withValues(alpha: 0.12)
-                : cs.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.touch_app,
-                size: 13,
-                color: humanCount > 0 ? cs.primary : cs.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text('$humanCount 篇待处理',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: humanCount > 0 ? cs.primary : cs.onSurfaceVariant)),
-          ]),
-        ),
-        if (llmActive) ...[
-          const SizedBox(width: 8),
-          _LlmPill(cs: cs, count: llmCount),
-        ],
-      ]),
-    );
-  }
-}
-
 class _LlmPill extends StatelessWidget {
   final ColorScheme cs;
   final int count;
