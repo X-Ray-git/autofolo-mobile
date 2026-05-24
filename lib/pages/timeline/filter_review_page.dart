@@ -128,12 +128,20 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
             children: [
               const Text('垃圾拦截',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              if (humanCount > 0 || llmActive)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (humanCount == 0 && !llmActive) ...[
+                      Icon(Icons.check_circle, size: 12, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+                      const SizedBox(width: 4),
+                      Text('全部处理完毕',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: cs.onSurfaceVariant.withValues(alpha: 0.7))),
+                    ] else ...[
                       if (humanCount > 0) ...[
                         Icon(Icons.touch_app, size: 12, color: cs.primary),
                         const SizedBox(width: 4),
@@ -159,8 +167,9 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
                                 fontSize: 12, color: cs.onSurfaceVariant)),
                       ],
                     ],
-                  ),
+                  ],
                 ),
+              ),
             ],
           );
         }),
