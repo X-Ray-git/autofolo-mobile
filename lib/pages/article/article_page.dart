@@ -520,22 +520,10 @@ class _ArticlePageViewState extends State<ArticlePageView> {
     _tag = widget.article.entryId;
     controller = Get.put(ArticleController(widget.article), tag: _tag);
     _scrollController = ScrollController();
-    _scrollController.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.position.pixels;
-    if (maxScroll > 0) {
-      // 2. 移除 setState，直接更新 value
-      _scrollProgress.value = (currentScroll / maxScroll).clamp(0.0, 1.0);
-    }
   }
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _scrollProgress.dispose(); // 记得释放 Notifier
     if (Get.isRegistered<ArticleController>(tag: _tag)) {
@@ -609,9 +597,22 @@ class _ArticlePageViewState extends State<ArticlePageView> {
         );
       }),
       body: SelectionArea(
-        child: CustomScrollView(
-          controller: _scrollController,
-        slivers: [
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification.metrics.axis == Axis.vertical) {
+              final maxScroll = notification.metrics.maxScrollExtent;
+              final currentScroll = notification.metrics.pixels;
+              if (maxScroll > 0) {
+                _scrollProgress.value = (currentScroll / maxScroll).clamp(0.0, 1.0);
+              } else if (notification.metrics.hasContentDimensions) {
+                _scrollProgress.value = 1.0;
+              }
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            controller: _scrollController,
+          slivers: [
           // ─── 元数据区域 ──────────────────────
           SliverPadding(
             padding: const EdgeInsets.all(16),
@@ -717,14 +718,17 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                 );
               }
 
-              return SliverList.list(
-                children: activeChunks.map((chunk) {
-                  return HtmlChunkCard(
-                    chunk: chunk,
-                    maxWidth: maxWidth,
-                    onImageTap: (url) => controller.openImagePreview(url, context),
-                  );
-                }).toList(),
+              return SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: activeChunks.map((chunk) {
+                    return HtmlChunkCard(
+                      chunk: chunk,
+                      maxWidth: maxWidth,
+                      onImageTap: (url) => controller.openImagePreview(url, context),
+                    );
+                  }).toList(),
+                ),
               );
             }),
           ),
@@ -732,7 +736,7 @@ class _ArticlePageViewState extends State<ArticlePageView> {
           // 底部间距
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
         ],
-      )),
+      ))),
     );
   }
 }

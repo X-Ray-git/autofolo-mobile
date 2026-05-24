@@ -90,22 +90,16 @@ class FeedDetailController extends GetxController {
     final article = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
     if (!_matchesScope(article)) return;
 
-    // 替换或移除列表中的该篇
-    final idx = articles.indexWhere((a) => a.entryId == eid);
-    if (article.isRead) {
-      if (idx >= 0) articles.removeAt(idx);
+    final merged = _mergeLocalReadState([article]).first;
+    // 同步更新 allArticles
+    final ai = allArticles.indexWhere((a) => a.entryId == eid);
+    if (ai >= 0) {
+      allArticles[ai] = merged;
+      allArticles.refresh();
     } else {
-      final merged = _mergeLocalReadState([article]).first;
-      // 同步更新 allArticles
-      final ai = allArticles.indexWhere((a) => a.entryId == eid);
-      if (ai >= 0) {
-        allArticles[ai] = merged;
-        allArticles.refresh();
-      } else {
-        allArticles.add(merged);
-      }
-      _applyFilter();
+      allArticles.add(merged);
     }
+    _applyFilter();
   }
 
   void refreshAutoTranslateStatus() {
@@ -136,32 +130,32 @@ class FeedDetailController extends GetxController {
     }
 
     unawaited(ReadSyncService.syncPendingReads());
-    final localSnapshot = _buildInitialLocalSnapshot();
-    final memorySnapshot = _buildInitialTimelineSnapshot();
-    final initialSnapshot = localSnapshot.isNotEmpty
-        ? localSnapshot
-        : memorySnapshot;
-    final hasInitialContent = initialSnapshot.isNotEmpty;
-    if (hasInitialContent) {
-      articles.value = initialSnapshot;
-      loadingState.value = Success(initialSnapshot);
-    }
-
-    final cachedArticles = ContentCacheService.readFeedDetailArticles(
-      _cacheScope,
-    );
-    if (!hasInitialContent && cachedArticles.isNotEmpty) {
-      final mergedCached = _mergeLocalReadState(cachedArticles);
-      allArticles.value = mergedCached;
+    
+    bool hasInitialContent = false;
+    final local = LocalArticleDbService.readAllArticles().where(_matchesScope).toList();
+    if (local.isNotEmpty) {
+      allArticles.value = _mergeLocalReadState(local);
       _applyFilter();
       loadingState.value = Success(articles.toList());
-    } else if (!hasInitialContent && cachedArticles.isEmpty) {
-      if (_hasAnyLocalScopeData() || _isTimelineSnapshotReady()) {
-        articles.clear();
-        loadingState.value = const Success(<ArticleModel>[]);
-      } else {
-        loadingState.value = const Loading();
+      hasInitialContent = true;
+    } else if (Get.isRegistered<TimelineController>()) {
+      final timeline = Get.find<TimelineController>();
+      if (timeline.loadingState.value is Success<List<ArticleModel>> && timeline.allArticles.isNotEmpty) {
+        allArticles.value = timeline.allArticles.where(_matchesScope).toList();
+        _applyFilter();
+        loadingState.value = Success(articles.toList());
+        hasInitialContent = true;
       }
+    }
+
+    final cachedArticles = ContentCacheService.readFeedDetailArticles(_cacheScope);
+    if (!hasInitialContent && cachedArticles.isNotEmpty) {
+      allArticles.value = _mergeLocalReadState(cachedArticles);
+      _applyFilter();
+      loadingState.value = Success(articles.toList());
+      hasInitialContent = true;
+    } else if (!hasInitialContent) {
+      loadingState.value = const Loading();
     }
 
     if (!_feedsLoaded) {
@@ -230,18 +224,15 @@ class FeedDetailController extends GetxController {
     final filteredUnread = unreadData.where(_matchesScope).toList();
     _applyUnreadSnapshot(filteredUnread);
 
-    final merged = _mergeLocalReadState(
-      filteredUnread,
-    ).where((article) => !article.isRead).toList();
-    articles.value = merged;
-    loadingState.value = Success(merged);
-    ContentCacheService.saveFeedDetailArticles(_cacheScope, merged);
-    // allArticles 包含已读（供筛选用）
     final all = LocalArticleDbService.readAllArticles()
         .where(_matchesScope)
         .toList();
     allArticles.value = _mergeLocalReadState(all);
     _applyFilter();
+    loadingState.value = Success(articles.toList());
+    
+    final unread = allArticles.where((a) => !a.isRead).toList();
+    ContentCacheService.saveFeedDetailArticles(_cacheScope, unread);
     // 全量同步完成后，强制通知订阅列表做全量重新计数，保证数字一致
     if (Get.isRegistered<SubscriptionsController>()) {
       Get.find<SubscriptionsController>().refreshUnreadCounts();
@@ -249,36 +240,7 @@ class FeedDetailController extends GetxController {
     unawaited(_refreshRecentReadWindow());
   }
 
-  List<ArticleModel> _buildInitialLocalSnapshot() {
-    final localArticles = LocalArticleDbService.readAllArticles()
-        .where(_matchesScope)
-        .toList();
-    if (localArticles.isEmpty) return const [];
-
-    return _mergeLocalReadState(
-      localArticles,
-    ).where((article) => !article.isRead).toList();
-  }
-
-  List<ArticleModel> _buildInitialTimelineSnapshot() {
-    if (!Get.isRegistered<TimelineController>()) return const [];
-    final timeline = Get.find<TimelineController>();
-    if (timeline.allArticles.isEmpty) return const [];
-    return timeline.allArticles
-        .where(_matchesScope)
-        .where((article) => !article.isRead)
-        .toList();
-  }
-
-  bool _hasAnyLocalScopeData() {
-    return LocalArticleDbService.readAllArticles().any(_matchesScope);
-  }
-
-  bool _isTimelineSnapshotReady() {
-    if (!Get.isRegistered<TimelineController>()) return false;
-    final timeline = Get.find<TimelineController>();
-    return timeline.loadingState.value is Success<List<ArticleModel>>;
-  }
+  // Removed unused snapshot methods
 
   int get _readSyncWindowDays {
     final raw = GStorage.setting.get(
@@ -375,13 +337,15 @@ class FeedDetailController extends GetxController {
       }
 
       LocalArticleDbService.upsertMany(scopedReadData, defaultReadState: true);
-      final merged = LocalArticleDbService.readAllArticles()
+      final all = LocalArticleDbService.readAllArticles()
           .where(_matchesScope)
-          .where((article) => !article.isRead)
           .toList();
-      articles.value = merged;
-      loadingState.value = Success(merged);
-      ContentCacheService.saveFeedDetailArticles(_cacheScope, merged);
+      allArticles.value = _mergeLocalReadState(all);
+      _applyFilter();
+      loadingState.value = Success(articles.toList());
+      
+      final unread = allArticles.where((a) => !a.isRead).toList();
+      ContentCacheService.saveFeedDetailArticles(_cacheScope, unread);
 
       final earliest = scopedReadData
           .map((article) => DateTime.tryParse(article.publishedAt))
