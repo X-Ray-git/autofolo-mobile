@@ -251,11 +251,11 @@ abstract final class HtmlChunkParser {
       return;
     }
 
-    // 代码块 - 保留 outerHtml 以保留原始格式与色彩
+    // 代码块 - 回退为提取纯文本，降低渲染负担
     if (tag == 'pre' || tag == 'code') {
       chunks.add(HtmlChunk(
         type: HtmlChunkType.codeBlock,
-        content: element.outerHtml.trim(),
+        content: element.text.trim(),
       ));
       return;
     }
