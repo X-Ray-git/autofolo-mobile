@@ -35,6 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _obscureSessionId = true;
   bool _obscureDeepseekKey = true;
   late String _badgeStrategy;
+  late bool _articleLazyLoading;
 
   @override
   void initState() {
@@ -55,6 +56,10 @@ class _SettingsPageState extends State<SettingsPage> {
       StorageKeys.badgeStrategy,
       defaultValue: 'unread_count',
     );
+    _articleLazyLoading = GStorage.setting.get(
+      StorageKeys.articleLazyLoading,
+      defaultValue: false,
+    ) as bool;
   }
 
   @override
@@ -110,6 +115,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     GStorage.setting.put(StorageKeys.readSyncWindowDays, readWindowDays);
     GStorage.setting.put(StorageKeys.badgeStrategy, _badgeStrategy);
+    GStorage.setting.put(StorageKeys.articleLazyLoading, _articleLazyLoading);
 
     AppFeedback.success('配置已保存', '设置已更新');
   }
@@ -298,6 +304,48 @@ class _SettingsPageState extends State<SettingsPage> {
             onChanged: (val) {
               if (val != null) setState(() => _badgeStrategy = val);
             },
+          ),
+
+          const SizedBox(height: 32),
+
+          // 渲染与性能
+          Text(
+            '渲染与性能',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface),
+          ),
+          const SizedBox(height: 16),
+
+          SwitchListTile(
+            title: const Text('正文 DOM 懒加载'),
+            subtitle: const Text('动态按需渲染视窗内的 HTML 节点'),
+            value: _articleLazyLoading,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (val) {
+              setState(() => _articleLazyLoading = val);
+            },
+            secondary: IconButton(
+              icon: const Icon(Icons.info_outline),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('关于正文 DOM 懒加载'),
+                    content: const Text(
+                      '开启后：\n使用 SliverList 机制进行视窗内懒加载。可以显著降低多图长文的首帧渲染时间，避免内存占用过高导致崩溃。\n\n'
+                      '副作用：\n由于系统无法提前预知未渲染节点的高度，会导致页面顶部的阅读进度条出现跳动、不准确或无法达到 100%。\n\n'
+                      '关闭时：\n一次性全量构建所有节点，进度条绝对精准。现代设备推荐关闭。'
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('我知道了'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
 
           const SizedBox(height: 32),

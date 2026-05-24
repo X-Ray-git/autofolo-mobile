@@ -9,6 +9,7 @@ import '../../http/feed_http.dart';
 import '../../http/init.dart';
 import '../../models/article.dart';
 import '../../router/app_pages.dart';
+import '../../common/constants/constants.dart';
 import '../../common/widgets/feedback_toast.dart';
 import '../../services/article_image_service.dart';
 import '../../services/local_article_db_service.dart';
@@ -715,6 +716,24 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                             ],
                           ]),
                   ),
+                );
+              }
+
+              final useLazyLoading = GStorage.setting.get(
+                StorageKeys.articleLazyLoading,
+                defaultValue: false,
+              ) as bool;
+
+              if (useLazyLoading) {
+                return SliverList.builder(
+                  itemCount: activeChunks.length,
+                  itemBuilder: (context, index) {
+                    return HtmlChunkCard(
+                      chunk: activeChunks[index],
+                      maxWidth: maxWidth,
+                      onImageTap: (url) => controller.openImagePreview(url, context),
+                    );
+                  },
                 );
               }
 

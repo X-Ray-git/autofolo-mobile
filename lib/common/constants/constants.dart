@@ -24,4 +24,5 @@ abstract final class StorageKeys {
   static const String readStatus = 'readStatus';
   static const String readSyncWindowDays = 'read_sync_window_days';
   static const String badgeStrategy = 'badge_strategy';
+  static const String articleLazyLoading = 'article_lazy_loading';
 }
