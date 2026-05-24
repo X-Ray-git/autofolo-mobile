@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:get/get.dart';
+import 'package:flutter_html/flutter_html.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../common/widgets/feedback_toast.dart';
 import '../../common/widgets/pill_tag.dart';
@@ -409,16 +411,43 @@ class _ArticleCardContent extends StatelessWidget {
             Icon(icon, size: 16, color: textColor),
             const SizedBox(width: 4),
             Expanded(
-              child: Text(
-                displayContent,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: textColor,
-                  height: 1.5,
-                ),
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: status == SummaryStatus.done && text != null && text.isNotEmpty
+                  ? Html(
+                      data: displayContent,
+                      style: {
+                        'body': Style(
+                          fontSize: FontSize(13),
+                          color: textColor,
+                          lineHeight: const LineHeight(1.5),
+                          margin: Margins.zero,
+                          padding: HtmlPaddings.zero,
+                          maxLines: 4,
+                          textOverflow: TextOverflow.ellipsis,
+                        ),
+                        'a': Style(
+                          color: cs.primary,
+                          textDecoration: TextDecoration.none,
+                        ),
+                      },
+                      onLinkTap: (url, _, __) async {
+                        if (url != null && url.isNotEmpty) {
+                          final uri = Uri.tryParse(url);
+                          if (uri != null && await canLaunchUrl(uri)) {
+                            await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
+                        }
+                      },
+                    )
+                  : Text(
+                      displayContent,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textColor,
+                        height: 1.5,
+                      ),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
             ),
           ],
         ),

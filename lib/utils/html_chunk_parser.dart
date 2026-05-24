@@ -144,19 +144,43 @@ abstract final class HtmlChunkParser {
     final isEmail = tableCount > 5 && tableCount > divCount * 2;
 
     final chunks = <HtmlChunk>[];
-
-    for (final node in fragment.nodes) {
-      if (node is dom.Element) {
-        _processElement(node, chunks, isEmail: isEmail);
-      } else if (node is dom.Text) {
-        final text = node.text.trim();
-        if (text.isNotEmpty) {
-          chunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: text));
-        }
-      }
-    }
+    _processMixedNodes(fragment.nodes, chunks, isEmail);
 
     return _mergeAdjacentParagraphs(chunks);
+  }
+
+  static void _processMixedNodes(Iterable<dom.Node> nodes, List<HtmlChunk> chunks, bool isEmail) {
+    final buffer = StringBuffer();
+    void flush() {
+      final text = buffer.toString().trim();
+      if (text.isNotEmpty) {
+        chunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: text));
+      }
+      buffer.clear();
+    }
+
+    for (final child in nodes) {
+      if (child is dom.Element) {
+        final tag = child.localName?.toLowerCase() ?? '';
+        final isBlockLike = _blockTags.contains(tag) || 
+                            _headingTags.contains(tag) || 
+                            tag == 'table' || 
+                            tag == 'ul' || tag == 'ol' || 
+                            tag == 'hr' || 
+                            tag == 'figure' || 
+                            tag == 'blockquote' ||
+                            tag == 'pre' || tag == 'code';
+        if (_mediaTags.contains(tag) || isBlockLike || _hasMediaDescendant(child)) {
+          flush();
+          _processElement(child, chunks, isEmail: isEmail);
+        } else {
+          buffer.write(child.outerHtml);
+        }
+      } else if (child is dom.Text) {
+        buffer.write(child.text);
+      }
+    }
+    flush();
   }
 
   static void _processElement(dom.Element element, List<HtmlChunk> chunks,
@@ -302,40 +326,28 @@ abstract final class HtmlChunkParser {
 
     // 块级容器 → 递归处理子节点
     if (_blockTags.contains(tag)) {
-      final childChunks = <HtmlChunk>[];
-      for (final child in element.nodes) {
-        if (child is dom.Element) {
-          _processElement(child, childChunks, isEmail: isEmail);
-        } else if (child is dom.Text) {
-          final text = child.text.trim();
-          if (text.isNotEmpty) {
-            childChunks.add(
-              HtmlChunk(type: HtmlChunkType.paragraph, content: text),
-            );
-          }
+      if (!_hasMediaDescendant(element)) {
+        final content = element.innerHtml.trim();
+        if (content.isNotEmpty) {
+          chunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: content));
         }
+        return;
       }
-      chunks.addAll(childChunks);
+      _processMixedNodes(element.nodes, chunks, isEmail);
       return;
     }
 
     // figure → 提取内部 img/iframe + figcaption
     if (tag == 'figure') {
       final childChunks = <HtmlChunk>[];
-      for (final child in element.nodes) {
-        if (child is dom.Element && child.localName?.toLowerCase() != 'figcaption') {
-          _processElement(child, childChunks, isEmail: isEmail);
-        } else if (child is dom.Text) {
-          final text = child.text.trim();
-          if (text.isNotEmpty) {
-            childChunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: text));
-          }
-        }
-      }
-      // figcaption 优先作为纯文本块追加
+      final nonCaptionNodes = element.nodes.where((n) => 
+        !(n is dom.Element && n.localName?.toLowerCase() == 'figcaption')
+      );
+      _processMixedNodes(nonCaptionNodes, childChunks, isEmail);
+      
       final caption = element.querySelector('figcaption');
       if (caption != null) {
-        final text = caption.text.trim();
+        final text = caption.innerHtml.trim();
         if (text.isNotEmpty) {
           childChunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: text));
         }
@@ -344,19 +356,15 @@ abstract final class HtmlChunkParser {
       return;
     }
 
-    // 未知元素 → BUGFIX: 递归子节点（如 <a><img></a>），不再只提取文本导致媒体丢失
-    final childChunks = <HtmlChunk>[];
-    for (final child in element.nodes) {
-      if (child is dom.Element) {
-        _processElement(child, childChunks, isEmail: isEmail);
-      } else if (child is dom.Text) {
-        final text = child.text.trim();
-        if (text.isNotEmpty) {
-          childChunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: text));
-        }
+    // 未知元素 → 递归子节点（如 <a><img></a>），不再只提取文本导致媒体丢失
+    if (!_hasMediaDescendant(element)) {
+      final content = element.outerHtml.trim();
+      if (content.isNotEmpty) {
+        chunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: content));
       }
+      return;
     }
-    chunks.addAll(childChunks);
+    _processMixedNodes(element.nodes, chunks, isEmail);
   }
 
   static String _extractSrc(dom.Element element) {
