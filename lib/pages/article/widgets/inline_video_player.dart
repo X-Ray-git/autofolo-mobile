@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../services/article_image_service.dart';
+import 'fullscreen_video_page.dart';
 
 /// 内联视频播放器 — poster → 加载 → 播放（含进度条 + 拖拽定位）
 class InlineVideoPlayer extends StatefulWidget {
@@ -26,14 +28,37 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   bool _isInitializing = false;
   bool _hasError = false;
   bool _showControls = true;
+  Timer? _hideTimer;
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
     _controller?..removeListener(_onControllerUpdate)..dispose();
     super.dispose();
   }
 
   void _onControllerUpdate() => setState(() {});
+
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    if (_showControls && (_controller?.value.isPlaying ?? false)) {
+      _hideTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted && _showControls && (_controller?.value.isPlaying ?? false)) {
+          setState(() => _showControls = false);
+        }
+      });
+    }
+  }
+
+  void _enterFullscreen() {
+    if (_controller == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FullscreenVideoPage(controller: _controller!),
+      ),
+    );
+  }
 
   Future<void> _initAndPlay() async {
     if (_isInitializing) return;
@@ -53,6 +78,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await controller.play();
       controller.setLooping(true);
       setState(() {});
+      _startHideTimer();
     } catch (e) {
       setState(() => _hasError = true);
       _controller?.dispose();
@@ -64,14 +90,18 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     if (_controller == null) return;
     if (_controller!.value.isPlaying) {
       _controller!.pause();
+      _hideTimer?.cancel();
+      _showControls = true;
     } else {
       _controller!.play();
+      _startHideTimer();
     }
     setState(() {});
   }
 
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
+    _startHideTimer();
   }
 
   String _formatDuration(Duration d) {
@@ -180,6 +210,15 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                                     ],
                                   ),
                                 ),
+                                const Spacer(),
+                                GestureDetector(
+                                  onTap: _enterFullscreen,
+                                  child: const Icon(
+                                    Icons.fullscreen,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
                               ],
                             ),
                           ],
@@ -189,8 +228,8 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                   ),
                 ),
 
-                // 中央播放/暂停按钮（控制层隐藏时也显示）
-                if (!_showControls)
+                // 中央播放/暂停按钮（仅在控制层隐藏且暂停时显示）
+                if (!_showControls && !(_controller!.value.isPlaying))
                   Center(
                     child: GestureDetector(
                       onTap: _togglePlayPause,
