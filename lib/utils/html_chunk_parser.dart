@@ -328,9 +328,16 @@ abstract final class HtmlChunkParser {
       return;
     }
 
-    // 容器标签 → 强制递归处理子节点，避免巨大富文本
+    // 容器标签 → 智能递归。如果不含媒体且不太长，作为一个整体返回，减少卡片数量
     if (_containerTags.contains(tag)) {
-      _processMixedNodes(element.nodes, chunks, isEmail);
+      if (_hasMediaDescendant(element) || element.innerHtml.length > 2000) {
+        _processMixedNodes(element.nodes, chunks, isEmail);
+      } else {
+        final content = element.innerHtml.trim();
+        if (content.isNotEmpty) {
+          chunks.add(HtmlChunk(type: HtmlChunkType.paragraph, content: content));
+        }
+      }
       return;
     }
 
