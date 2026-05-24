@@ -160,6 +160,12 @@ abstract final class HtmlChunkParser {
     for (final child in nodes) {
       if (child is dom.Element) {
         final tag = child.localName?.toLowerCase() ?? '';
+        
+        // 过滤无用的内联样式和脚本，避免引发 flutter_html 渲染性能灾难和破坏 App 主题
+        if (tag == 'style' || tag == 'script' || tag == 'link' || tag == 'meta') {
+          continue;
+        }
+        
         final isBlockLike = _containerTags.contains(tag) || tag == 'p' || 
                             _headingTags.contains(tag) || 
                             tag == 'table' || 
