@@ -1682,3 +1682,7 @@ Tag: `v1.0.0-beta2`
 - **背景**：曾为防止“点击已读”时出现卡顿，在 `feed_detail_page.dart` 中引入了 O(1) 的增量更新逻辑（仅对 `articles` 列表中对应索引作 `remove` 或局部替换），以规避触发 `_applyFilter()` 带来的 O(N) 级别全列表重构。
 - **重新评估**：其实导致“点击已读卡顿”的真正元凶是**UI的整个 Widget Tree 重构**，而不是 Dart 层面的一层循环数组处理。由于我们在此前已经引入了 `ArticleStateNotifier` 以及局部 `Obx` 来控制重绘，UI 卡顿的根因已被解决。
 - **决策**：回退了 O(1) 优化，恢复使用 `allArticles.refresh()` + 全量 `_applyFilter()` 的设计。这使得业务逻辑的代码更简洁、直观，并且在 Dart 处理内存数组极快的加持下，没有观察到性能衰退。
+
+### 48.3 正文 DOM 懒加载设置开关
+- **需求**：由于“一次性全量渲染”可能会在低端设备上引发卡顿或崩溃，我们需要把控制权交给用户。
+- **实现**：在设置页 (`SettingsPage`) 新增“渲染与性能”区块，加入了“正文 DOM 懒加载”开关（默认关闭）。旁边的 Info 按钮会弹出对话框，向高级用户明确解释“内存开销”与“阅读进度条精确度”之间的技术博弈。状态保存在 `GStorage.setting` 中，由 `article_page.dart` 实时读取并动态切换 `SliverList` 或 `SliverToBoxAdapter` 机制。
