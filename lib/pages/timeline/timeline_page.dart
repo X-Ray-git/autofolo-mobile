@@ -4,11 +4,11 @@ import 'package:get/get.dart';
 import '../../common/widgets/refresh_indicator.dart' as custom_refresh;
 import '../../common/widgets/refresh_aware_scroll_physics.dart';
 import '../../common/widgets/no_overscroll_indicator_behavior.dart';
+import '../../common/widgets/shimmer_card.dart';
 
 import '../../http/init.dart';
 import '../../router/app_pages.dart';
 import '../../services/article_state_notifier.dart';
-import '../../services/local_article_db_service.dart';
 import '../widgets/article_card.dart';
 import 'timeline_controller.dart';
 
@@ -173,9 +173,7 @@ class _TimelinePageState extends State<TimelinePage> {
             },
             child: Obx(() {
               ArticleStateNotifier.version.value; // 订阅变更通知
-              final filterCount = LocalArticleDbService.readAllArticles()
-                  .where((a) => a.isRejectedByAi && !a.isRead)
-                  .length;
+              final filterCount = controller.filterCount.value;
               return ScrollConfiguration(
                 behavior: const NoOverscrollIndicatorBehavior(),
                 child: controller.articles.isEmpty
@@ -257,84 +255,48 @@ class _TimelinePageState extends State<TimelinePage> {
 
 // ─── 优雅的加载骨架屏（与新版卡片像素级对齐） ───
 
-class _LocalTimelineSkeleton extends StatefulWidget {
+class _LocalTimelineSkeleton extends StatelessWidget {
   const _LocalTimelineSkeleton();
 
   @override
-  State<_LocalTimelineSkeleton> createState() => _LocalTimelineSkeletonState();
-}
-
-class _LocalTimelineSkeletonState extends State<_LocalTimelineSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animController;
-  late final Animation<double> _opacityAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _opacityAnim = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 6),
+    return ShimmerFadeList(
       itemCount: 6,
-      itemBuilder: (context, index) {
-        return FadeTransition(
-          opacity: _opacityAnim,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Card(
-              margin: EdgeInsets.zero,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title Lines
-                    _SkeletonBlock(width: double.infinity, height: 18),
-                    const SizedBox(height: 10),
-                    _SkeletonBlock(width: MediaQuery.of(context).size.width * 0.6, height: 18),
-                    const SizedBox(height: 20),
-                    // Bottom Metadata Row
-                    Row(
-                      children: [
-                        _SkeletonBlock(width: 48, height: 20, borderRadius: 10),
-                        const SizedBox(width: 8),
-                        _SkeletonBlock(width: 48, height: 20, borderRadius: 10),
-                        const Spacer(),
-                        _SkeletonBlock(width: 64, height: 14),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Card(
+          margin: EdgeInsets.zero,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3),
+              width: 1,
             ),
           ),
-        );
-      },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SkeletonBlock(width: double.infinity, height: 18),
+                const SizedBox(height: 10),
+                _SkeletonBlock(width: MediaQuery.of(context).size.width * 0.6, height: 18),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    _SkeletonBlock(width: 48, height: 20, borderRadius: 10),
+                    const SizedBox(width: 8),
+                    _SkeletonBlock(width: 48, height: 20, borderRadius: 10),
+                    const Spacer(),
+                    _SkeletonBlock(width: 64, height: 14),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

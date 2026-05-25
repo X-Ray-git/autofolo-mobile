@@ -6,6 +6,7 @@ import '../../common/widgets/pill_tag.dart';
 import '../../common/widgets/refresh_indicator.dart' as custom_refresh;
 import '../../common/widgets/refresh_aware_scroll_physics.dart';
 import '../../common/widgets/no_overscroll_indicator_behavior.dart';
+import '../../common/widgets/shimmer_card.dart';
 import '../../http/init.dart';
 import '../../models/feed.dart';
 import '../../router/app_pages.dart';
@@ -150,125 +151,90 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
 
 // ─── 优雅的骨架屏 ────────────────────────────────
 
-class _SubscriptionsSkeleton extends StatefulWidget {
+class _SubscriptionsSkeleton extends StatelessWidget {
   const _SubscriptionsSkeleton();
-
-  @override
-  State<_SubscriptionsSkeleton> createState() => _SubscriptionsSkeletonState();
-}
-
-class _SubscriptionsSkeletonState extends State<_SubscriptionsSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animController;
-  late final Animation<double> _opacityAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _opacityAnim = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListView.builder(
-      physics: const NeverScrollableScrollPhysics(),
+    return ShimmerFadeList(
       padding: const EdgeInsets.only(top: 16),
       itemCount: 4,
-      itemBuilder: (context, index) {
-        return FadeTransition(
-          opacity: _opacityAnim,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                // View 层占位
-                Row(
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      width: 100,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: cs.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Feed 卡片占位
                 Container(
-                  margin: const EdgeInsets.only(left: 16),
-                  padding: const EdgeInsets.all(12),
+                  width: 64,
+                  height: 24,
                   decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(16),
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerHighest,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 120,
-                              height: 14,
-                              decoration: BoxDecoration(
-                                color: cs.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              width: 180,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: cs.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: 100,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ],
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 16),
+            Container(
+              margin: const EdgeInsets.only(left: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 120,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 180,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

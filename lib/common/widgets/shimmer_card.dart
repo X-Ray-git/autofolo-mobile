@@ -116,3 +116,62 @@ class TimelineSkeleton extends StatelessWidget {
     );
   }
 }
+
+/// 共享骨架屏淡入淡出列表 — 封装动画控制器逻辑，消除三处重复代码。
+/// 各页面只需传入自己的卡片 builder。
+class ShimmerFadeList extends StatefulWidget {
+  final int itemCount;
+  final Widget Function(BuildContext context, int index) itemBuilder;
+  final EdgeInsetsGeometry? padding;
+  final ScrollPhysics? physics;
+
+  const ShimmerFadeList({
+    super.key,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.padding,
+    this.physics,
+  });
+
+  @override
+  State<ShimmerFadeList> createState() => _ShimmerFadeListState();
+}
+
+class _ShimmerFadeListState extends State<ShimmerFadeList>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _opacityAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _opacityAnim = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: widget.physics ?? const NeverScrollableScrollPhysics(),
+      padding: widget.padding ?? const EdgeInsets.only(top: 6),
+      itemCount: widget.itemCount,
+      itemBuilder: (context, index) {
+        return FadeTransition(
+          opacity: _opacityAnim,
+          child: widget.itemBuilder(context, index),
+        );
+      },
+    );
+  }
+}

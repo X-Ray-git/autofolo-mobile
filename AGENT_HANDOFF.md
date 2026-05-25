@@ -1719,4 +1719,40 @@ Tag: `v1.0.0-beta2`
   4. 随后 `LocalArticleDbService.upsertMany` 根据被删除后的空覆盖状态重新合并，将该文章状态重置为 `isRead: false`，但保留了它原本的 `isRejectedByAi: true` 标记。
   5. `FilterReviewPage` 监听到 `isRejectedByAi == true && !isRead`，导致该文章重新出现在审核列表中。
 - **建议修复方向**：
-  在 `TimelineController._applyUnreadSnapshot` 中删除本地已读状态前，应优先检查 `ReadSyncService.pendingReadItems`。如果该文章存在于待同步队列中，说明它是用户刚刚执行的乐观更新（Optimistic Update），此时应信任本地已读状态，**不要**因为 API 返回了旧的“未读”状态就将其覆盖和删除。
+  在 `TimelineController._applyUnreadSnapshot` 中删除本地已读状态前，应优先检查 `ReadSyncService.pendingReadItems`。
+
+## 52. 性能优化（2026-05-25）
+
+> 不影响任何现有功能与体验，`dart analyze` 零新增 warning，`flutter build apk --debug` 通过。
+
+### 52.1 API 请求并行化
+- `TimelineController.loadData()` 和 `FeedDetailController.loadData()` 中 3 个串行 `await`（feeds / social / inbox）改为 `Future.wait` 并行。
+- `_refreshRecentReadWindow()` 中 2 个串行 `await`（feeds read / social read）同样改为 `Future.wait`。
+
+### 52.2 正则表达式编译缓存
+- `translation_service.dart`、`article_content_utils.dart`、`html_chunk_parser.dart`、`source_taxonomy.dart` 共 9 处方法内 `RegExp(...)` 提升为 `static final` 常量。
+
+### 52.3 不必要的 ArticleModel 全字段拷贝消除
+- `_mergeLocalReadState()` 增加守卫条件：只在本地 readState 与当前 `isRead` 不同时才创建新对象。
+- `_updateReadStateInMemory()` 从 `.map()` 全列表遍历改为 `indexWhere` 单点定位。
+
+### 52.4 searchSourceArticles 去拷贝
+- `TimelineController.searchSourceArticles` 从 `allArticles.toList()` 改为直接返回 `allArticles` 引用。
+
+### 52.5 骨架屏动画代码去重
+- 新增 `ShimmerFadeList`（`lib/common/widgets/shimmer_card.dart`），三处独立动画控制器替换为统一组件。
+
+### 52.6 Hive 批量写入
+- `LlmConfig._save()` 中 6 次 `await put` 合并为 1 次 `await putAll`。
+
+### 52.7 AI 过滤计数增量更新
+- `TimelineController` 新增 `filterCount` RxInt，不再每次 rebuild 全量遍历 `readAllArticles()`。
+
+### 52.8 FeedDetail 重复 upsertMany 移除
+- `FeedDetailController._applyUnreadSnapshot()` 中 stale 清除循环前的冗余调用已删除。
+
+### 52.9 ReadSyncService 指数退避
+- 重试延迟从固定 `2s` 改为 `1s → 2s → 4s`（`Duration(seconds: 1 << retry)`）。
+
+### 52.10 遗留问题（原 #51.1 续）
+如果该文章存在于待同步队列中，说明它是用户刚刚执行的乐观更新（Optimistic Update），此时应信任本地已读状态，**不要**因为 API 返回了旧的“未读”状态就将其覆盖和删除。

@@ -15,6 +15,7 @@ import '../../router/app_pages.dart';
 import '../../utils/source_taxonomy.dart';
 import '../../common/widgets/feedback_toast.dart';
 import '../../common/widgets/refresh_indicator.dart' as custom_refresh;
+import '../../common/widgets/shimmer_card.dart';
 import '../../services/account_service.dart';
 import '../../services/article_image_service.dart';
 import '../../services/content_cache_service.dart';
@@ -185,11 +186,26 @@ class FeedDetailController extends GetxController {
       _feedsLoaded = true;
     }
 
-    final unreadResult = await FeedHttp.collectEntries(
-      view: 0,
-      withContent: true,
-      feedMap: _feedMap,
-    );
+    final results = await Future.wait([
+      FeedHttp.collectEntries(
+        view: 0,
+        withContent: true,
+        feedMap: _feedMap,
+      ),
+      FeedHttp.collectEntries(
+        view: 1,
+        withContent: true,
+        feedMap: _feedMap,
+      ),
+      FeedHttp.collectAllInboxEntries(
+        limit: 100,
+        withContent: true,
+      ),
+    ]);
+
+    final unreadResult = results[0];
+    final socialResult = results[1];
+    final inboxResult = results[2];
 
     if (unreadResult is LoadError<List<ArticleModel>>) {
       if (!hasInitialContent && cachedArticles.isEmpty) {
@@ -202,20 +218,9 @@ class FeedDetailController extends GetxController {
         ? unreadResult.response
         : <ArticleModel>[];
 
-    final socialResult = await FeedHttp.collectEntries(
-      view: 1,
-      withContent: true,
-      feedMap: _feedMap,
-    );
-
     if (socialResult is Success<List<ArticleModel>>) {
       unreadData.addAll(socialResult.response);
     }
-
-    final inboxResult = await FeedHttp.collectAllInboxEntries(
-      limit: 100,
-      withContent: true,
-    );
 
     if (inboxResult is Success<List<ArticleModel>>) {
       unreadData.addAll(inboxResult.response);
@@ -281,9 +286,6 @@ class FeedDetailController extends GetxController {
       LocalArticleDbService.setReadState(local.entryId, true);
     }
 
-    // UPSERT NEW ARTICLES
-    LocalArticleDbService.upsertMany(unreadData, defaultReadState: false);
-
     // API 返回未读 → 清除本地旧已读标记
     for (final article in unreadData) {
       final stale = GStorage.readStatus.get(article.entryId);
@@ -306,21 +308,26 @@ class FeedDetailController extends GetxController {
       final windowStart = DateTime.now().subtract(
         Duration(days: _readSyncWindowDays),
       );
-      final feedsReadResult = await FeedHttp.collectEntries(
-        view: 0,
-        read: true,
-        withContent: true,
-        publishedAfter: windowStart.toUtc().toIso8601String(),
-        feedMap: _feedMap,
-      );
+      final isoStr = windowStart.toUtc().toIso8601String();
+      final readResults = await Future.wait([
+        FeedHttp.collectEntries(
+          view: 0,
+          read: true,
+          withContent: true,
+          publishedAfter: isoStr,
+          feedMap: _feedMap,
+        ),
+        FeedHttp.collectEntries(
+          view: 1,
+          read: true,
+          withContent: true,
+          publishedAfter: isoStr,
+          feedMap: _feedMap,
+        ),
+      ]);
 
-      final socialReadResult = await FeedHttp.collectEntries(
-        view: 1,
-        read: true,
-        withContent: true,
-        publishedAfter: windowStart.toUtc().toIso8601String(),
-        feedMap: _feedMap,
-      );
+      final feedsReadResult = readResults[0];
+      final socialReadResult = readResults[1];
 
       final readData = <ArticleModel>[];
       if (feedsReadResult is Success<List<ArticleModel>>) {
@@ -368,7 +375,7 @@ class FeedDetailController extends GetxController {
   List<ArticleModel> _mergeLocalReadState(List<ArticleModel> source) {
     return source.map((a) {
       final localRead = LocalArticleDbService.readOverrideOf(a.entryId);
-      if (localRead != null) {
+      if (localRead != null && localRead != a.isRead) {
         return ArticleModel(
           entryId: a.entryId,
           feedId: a.feedId,
@@ -687,119 +694,85 @@ class FeedDetailPage extends StatelessWidget {
 
 // ─── 优雅的局部状态视图 ───
 
-class _FeedDetailSkeleton extends StatefulWidget {
+class _FeedDetailSkeleton extends StatelessWidget {
   const _FeedDetailSkeleton();
 
   @override
-  State<_FeedDetailSkeleton> createState() => _FeedDetailSkeletonState();
-}
-
-class _FeedDetailSkeletonState extends State<_FeedDetailSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animController;
-  late final Animation<double> _opacityAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _opacityAnim = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 6),
+    return ShimmerFadeList(
       itemCount: 4,
-      itemBuilder: (context, index) {
-        return FadeTransition(
-          opacity: _opacityAnim,
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Card(
+          margin: EdgeInsets.zero,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: Theme.of(context)
+                  .colorScheme
+                  .outlineVariant
+                  .withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Card(
-              margin: EdgeInsets.zero,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outlineVariant
-                      .withValues(alpha: 0.3),
-                  width: 1,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 10),
+                Container(
+                  width: MediaQuery.of(context).size.width * 0.6,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
                   children: [
                     Container(
-                      width: double.infinity,
-                      height: 18,
+                      width: 48,
+                      height: 20,
                       decoration: BoxDecoration(
                         color: Theme.of(context)
                             .colorScheme
                             .surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const Spacer(),
                     Container(
-                      width: MediaQuery.of(context).size.width * 0.6,
-                      height: 18,
+                      width: 64,
+                      height: 14,
                       decoration: BoxDecoration(
                         color: Theme.of(context)
                             .colorScheme
                             .surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          width: 64,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
-              ),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

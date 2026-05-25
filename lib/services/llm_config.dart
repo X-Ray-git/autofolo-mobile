@@ -110,12 +110,14 @@ class LlmConfig {
   }
 
   static Future<void> _save(String prefix, LlmConfig c) async {
-    await GStorage.setting.put('${prefix}model', c.model);
-    await GStorage.setting.put('${prefix}thinking', c.thinking);
-    await GStorage.setting.put('${prefix}reasoning_effort', c.reasoningEffort);
-    await GStorage.setting.put('${prefix}temperature', c.temperature);
-    await GStorage.setting.put('${prefix}max_tokens', c.maxTokens);
-    await GStorage.setting.put('${prefix}concurrency', c.concurrency);
+    await GStorage.setting.putAll({
+      '${prefix}model': c.model,
+      '${prefix}thinking': c.thinking,
+      '${prefix}reasoning_effort': c.reasoningEffort,
+      '${prefix}temperature': c.temperature,
+      '${prefix}max_tokens': c.maxTokens,
+      '${prefix}concurrency': c.concurrency,
+    });
   }
 
   static void _clear(String prefix) {

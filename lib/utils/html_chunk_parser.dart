@@ -71,6 +71,9 @@ abstract final class HtmlChunkParser {
 
   static const _headingTags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'};
 
+  static final _tableTagRe = RegExp(r'<table[>\s]', caseSensitive: false);
+  static final _divTagRe = RegExp(r'<div[>\s]', caseSensitive: false);
+
   static const _mediaTags = {
     'img', 'iframe', 'video', 'audio', 'table', 'pre', 'code',
     'blockquote', 'ul', 'ol', 'hr',
@@ -134,12 +137,8 @@ abstract final class HtmlChunkParser {
 
     // 检测邮件 HTML：大量 table 但几乎无 div → 启用表格展平（最多只扫前 50000 字符即可判断）
     final scopeHtml = rawHtml.length > 50000 ? rawHtml.substring(0, 50000) : rawHtml;
-    final tableCount = RegExp(r'<table[>\s]', caseSensitive: false)
-        .allMatches(scopeHtml)
-        .length;
-    final divCount = RegExp(r'<div[>\s]', caseSensitive: false)
-        .allMatches(scopeHtml)
-        .length;
+    final tableCount = _tableTagRe.allMatches(scopeHtml).length;
+    final divCount = _divTagRe.allMatches(scopeHtml).length;
     final isEmail = tableCount > 5 && tableCount > divCount * 2;
 
     final chunks = <HtmlChunk>[];
