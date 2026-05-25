@@ -132,12 +132,13 @@ abstract final class HtmlChunkParser {
   static List<HtmlChunk> _parseSync(String rawHtml) {
     final fragment = html_parser.parseFragment(rawHtml);
 
-    // 检测邮件 HTML：大量 table 但几乎无 div → 启用表格展平
+    // 检测邮件 HTML：大量 table 但几乎无 div → 启用表格展平（最多只扫前 50000 字符即可判断）
+    final scopeHtml = rawHtml.length > 50000 ? rawHtml.substring(0, 50000) : rawHtml;
     final tableCount = RegExp(r'<table[>\s]', caseSensitive: false)
-        .allMatches(rawHtml)
+        .allMatches(scopeHtml)
         .length;
     final divCount = RegExp(r'<div[>\s]', caseSensitive: false)
-        .allMatches(rawHtml)
+        .allMatches(scopeHtml)
         .length;
     final isEmail = tableCount > 5 && tableCount > divCount * 2;
 
