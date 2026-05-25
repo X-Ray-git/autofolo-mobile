@@ -210,12 +210,14 @@ class ArticleController extends GetxController {
       maxRetries: 5,
     );
 
+    // 同步结束（无论成败），释放临时保护锁
+    GStorage.readStatus.delete(article.entryId);
+
     if (!ok) {
       // 5 次失败 → 恢复本地未读，与服务器保持一致
       if (Get.isRegistered<TimelineController>()) {
         Get.find<TimelineController>().markAsUnreadLocal(article.entryId);
       } else {
-        GStorage.readStatus.put(article.entryId, false);
         LocalArticleDbService.setReadState(article.entryId, false);
       }
       isRead.value = false;
@@ -231,7 +233,6 @@ class ArticleController extends GetxController {
     if (Get.isRegistered<TimelineController>()) {
       Get.find<TimelineController>().markAsUnreadLocal(article.entryId);
     } else {
-      GStorage.readStatus.put(article.entryId, false);
       LocalArticleDbService.setReadState(article.entryId, false);
     }
     isRead.value = false;

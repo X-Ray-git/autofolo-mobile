@@ -227,10 +227,12 @@ class FeedDetailController extends GetxController {
     }
 
     final filteredUnread = unreadData.where(_matchesScope).toList();
-    final allSucceeded = unreadResult is Success &&
-        socialResult is Success &&
-        inboxResult is Success;
-    _applyUnreadSnapshot(filteredUnread, trustCompleteness: allSucceeded);
+    final feedsOk = unreadResult is Success<List<ArticleModel>>;
+    final socialOk = socialResult is Success<List<ArticleModel>>;
+    final inboxOk = inboxResult is Success<List<ArticleModel>>;
+
+    _applyUnreadSnapshot(filteredUnread,
+        feedsOk: feedsOk, socialOk: socialOk, inboxOk: inboxOk);
 
     final all = LocalArticleDbService.readAllArticles()
         .where(_matchesScope)
@@ -277,20 +279,27 @@ class FeedDetailController extends GetxController {
   }
 
   void _applyUnreadSnapshot(List<ArticleModel> unreadData,
-      {bool trustCompleteness = true}) {
+      {bool feedsOk = true, bool socialOk = true, bool inboxOk = true}) {
     final unreadIds = unreadData.map((a) => a.entryId).toSet();
     final localArticles = LocalArticleDbService.readAllArticles()
         .where(_matchesScope)
         .toList();
-    // 仅在数据完整时标记本地缺失文章为已读，避免部分 API 失败时误标记
-    if (trustCompleteness) {
-      for (final local in localArticles) {
-        if (unreadIds.contains(local.entryId)) continue;
-        final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
-        if (localOverride == false) continue;
-        GStorage.readStatus.put(local.entryId, true);
-        LocalArticleDbService.setReadState(local.entryId, true);
+
+    for (final local in localArticles) {
+      if (unreadIds.contains(local.entryId)) continue;
+
+      // 按文章类型独立判定：对应 API 失败则跳过，不误标记
+      if (local.category == 'inbox' && !inboxOk) continue;
+      if (local.category == 'social' && !socialOk) continue;
+      if (!feedsOk && local.category != 'inbox' && local.category != 'social') continue;
+
+      final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
+      if (localOverride == false) {
+        // 用户曾标为「未读」，但文章在别处已被读完 → 清除过期覆盖
+        GStorage.readStatus.delete(local.entryId);
       }
+      // 只更新本地缓存，不创建 readStatus 覆盖（系统推断，非用户操作）
+      LocalArticleDbService.setReadState(local.entryId, true);
     }
 
     // 收集待同步队列 ID，保护用户刚执行的乐观更新不被 API 旧数据覆盖
@@ -321,20 +330,19 @@ class FeedDetailController extends GetxController {
       final windowStart = DateTime.now().subtract(
         Duration(days: _readSyncWindowDays),
       );
-      final isoStr = windowStart.toUtc().toIso8601String();
       final readResults = await Future.wait([
-        FeedHttp.collectEntries(
+        FeedHttp.getEntries(
           view: 0,
           read: true,
+          limit: 200,
           withContent: true,
-          publishedAfter: isoStr,
           feedMap: _feedMap,
         ),
-        FeedHttp.collectEntries(
+        FeedHttp.getEntries(
           view: 1,
           read: true,
+          limit: 200,
           withContent: true,
-          publishedAfter: isoStr,
           feedMap: _feedMap,
         ),
       ]);
@@ -350,7 +358,13 @@ class FeedDetailController extends GetxController {
         readData.addAll(socialReadResult.response);
       }
 
-      final scopedReadData = readData.where(_matchesScope).toList();
+      // 本地按窗口过滤（不依赖 API 的 publishedAfter 参数语义）
+      final windowedReadData = readData.where((a) {
+        final pub = DateTime.tryParse(a.publishedAt);
+        return pub != null && pub.isAfter(windowStart);
+      }).toList();
+
+      final scopedReadData = windowedReadData.where(_matchesScope).toList();
       if (scopedReadData.isEmpty) {
         AppFeedback.info('已同步已读', '最近$_readSyncWindowDays天没有新增已读文章');
         return;

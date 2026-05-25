@@ -65,8 +65,20 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   void _keep(ArticleModel article) {
     ArticleStateNotifier.tick(article.entryId);
     AutoFilterWorker.unReject(article.entryId);
+    // 清除遗留的 readStatus 覆盖（不应写入 false，用户只是保留文章，不是标未读）
+    GStorage.readStatus.delete(article.entryId);
+    // 更新 TimelineController 内存状态，使文章立即可见（清除 AI 拦截标记）
     if (Get.isRegistered<TimelineController>()) {
-      Get.find<TimelineController>().markAsUnreadLocal(article.entryId);
+      final tc = Get.find<TimelineController>();
+      final idx = tc.allArticles.indexWhere((a) => a.entryId == article.entryId);
+      if (idx >= 0) {
+        final raw = GStorage.articleDb.get(article.entryId);
+        if (raw is Map) {
+          tc.allArticles[idx] =
+              ArticleModel.fromCache(Map<String, dynamic>.from(raw));
+          tc.allArticles.refresh();
+        }
+      }
     }
     setState(() => _articles.removeWhere((a) => a.entryId == article.entryId));
   }

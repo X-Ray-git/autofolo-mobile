@@ -140,10 +140,13 @@ class TimelineController extends GetxController {
       AppFeedback.error('同步未完成', '部分未读数据拉取失败，请稍后重试');
     }
 
-    if (unreadData.isNotEmpty || !hasError) {
-      _applyUnreadSnapshot(unreadData, trustCompleteness: !hasError);
-      _loadFromLocalDatabase();
-    }
+    final feedsOk = feedsResult is Success<List<ArticleModel>>;
+    final socialOk = socialResult is Success<List<ArticleModel>>;
+    final inboxOk = inboxResult is Success<List<ArticleModel>>;
+
+    _applyUnreadSnapshot(unreadData,
+        feedsOk: feedsOk, socialOk: socialOk, inboxOk: inboxOk);
+    _loadFromLocalDatabase();
 
     loadingState.value = Success(articles.toList());
     // 全量同步完成后，强制通知订阅列表做全量重新计数
@@ -167,18 +170,26 @@ class TimelineController extends GetxController {
   }
 
   void _applyUnreadSnapshot(List<ArticleModel> unreadData,
-      {bool trustCompleteness = true}) {
+      {bool feedsOk = true, bool socialOk = true, bool inboxOk = true}) {
     final unreadIds = unreadData.map((a) => a.entryId).toSet();
     final localArticles = LocalArticleDbService.readAllArticles();
-    // 仅在数据完整时标记本地缺失文章为已读，避免部分 API 失败时误标记
-    if (trustCompleteness) {
-      for (final local in localArticles) {
-        if (unreadIds.contains(local.entryId)) continue;
-        final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
-        if (localOverride == false) continue;
-        GStorage.readStatus.put(local.entryId, true);
-        LocalArticleDbService.setReadState(local.entryId, true);
+
+    for (final local in localArticles) {
+      if (unreadIds.contains(local.entryId)) continue;
+
+      // 按文章类型独立判定：对应 API 失败则跳过，不误标记
+      if (local.category == 'inbox' && !inboxOk) continue;
+      if (local.category == 'social' && !socialOk) continue;
+      // feeds 文章：feeds API 是主数据源，失败则跳过
+      if (!feedsOk && local.category != 'inbox' && local.category != 'social') continue;
+
+      final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
+      if (localOverride == false) {
+        // 用户曾标为「未读」，但文章在别处已被读完 → 清除过期覆盖
+        GStorage.readStatus.delete(local.entryId);
       }
+      // 只更新本地缓存，不创建 readStatus 覆盖（系统推断，非用户操作）
+      LocalArticleDbService.setReadState(local.entryId, true);
     }
 
     // 收集待同步队列 ID，保护用户刚执行的乐观更新不被 API 旧数据覆盖
@@ -211,20 +222,19 @@ class TimelineController extends GetxController {
         Duration(days: _readSyncWindowDays),
       );
 
-      final isoStr = windowStart.toUtc().toIso8601String();
       final readResults = await Future.wait([
-        FeedHttp.collectEntries(
+        FeedHttp.getEntries(
           view: 0,
           read: true,
+          limit: 200,
           withContent: true,
-          publishedAfter: isoStr,
           feedMap: _feedMap,
         ),
-        FeedHttp.collectEntries(
+        FeedHttp.getEntries(
           view: 1,
           read: true,
+          limit: 200,
           withContent: true,
-          publishedAfter: isoStr,
           feedMap: _feedMap,
         ),
       ]);
@@ -240,15 +250,21 @@ class TimelineController extends GetxController {
         readData.addAll(socialReadResult.response);
       }
 
-      if (readData.isEmpty) {
+      // 本地按窗口过滤（不依赖 API 的 publishedAfter 参数语义）
+      final windowedReadData = readData.where((a) {
+        final pub = DateTime.tryParse(a.publishedAt);
+        return pub != null && pub.isAfter(windowStart);
+      }).toList();
+
+      if (windowedReadData.isEmpty) {
         AppFeedback.info('已同步已读', '最近$_readSyncWindowDays天没有新增已读文章');
         return;
       }
 
-      LocalArticleDbService.upsertMany(readData, defaultReadState: true);
+      LocalArticleDbService.upsertMany(windowedReadData, defaultReadState: true);
       _loadFromLocalDatabase();
 
-      final earliest = readData
+      final earliest = windowedReadData
           .map(_timeScore)
           .whereType<int>()
           .fold<int?>(
@@ -317,7 +333,7 @@ class TimelineController extends GetxController {
 
   void markAsUnreadLocal(String entryId) {
     if (entryId.trim().isEmpty) return;
-    GStorage.readStatus.put(entryId, false);
+    // 不再写入 readStatus=false；只更新本地缓存，信任服务端为最终权威
     LocalArticleDbService.setReadState(entryId, false);
     _updateReadStateInMemory(entryId, false);
   }

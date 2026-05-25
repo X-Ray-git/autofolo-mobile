@@ -1765,3 +1765,100 @@ Tag: `v1.0.0-beta2`
 - **自我修复机制**：这种错误标记由于未经过 `ReadSyncService` 同步到服务器，所以在下一次网络成功的刷新中，服务器依然会返回未读状态。`_applyUnreadSnapshot` 发现后，会删除错误的本地已读标记，从而使文章重新出现。这保护了数据不丢失，但严重影响了 UX。
 - **处理建议**：待后续讨论制定针对部分网络失败的精确快照对齐方案。
 - **实际修复**（2026-05-25）：`_applyUnreadSnapshot` 新增 `trustCompleteness` 参数。部分 API 失败时跳过"标记本地缺失文章为已读"循环，避免不完整数据误标记。`TimelineController.loadData()` 传入 `trustCompleteness: !hasError`；`FeedDetailController.loadData()` 传入三路全部成功的与运算结果。
+
+---
+
+## 53. 已读同步全面修复（2026-05-25）
+
+### 53.1 问题报告
+
+用户反馈：在 Folo Web 或其他客户端将文章标记为已读后，回到 autofolo 下拉刷新，该文章仍然显示为未读。
+
+**具体案例**：一篇「新智元」的文章（entryId=`1126810136011145218`，标题含"Ilya"），远端已读，本地仍显示未读，反复刷新无效。
+
+### 53.2 实验过程
+
+使用用户提供的 Session Token 直接调用 Folo API 进行对照实验：
+
+```
+# 实验 1：read=false → 目标文章不在结果中 ✅ 服务端已确认已读
+# 实验 2：read=true → 目标文章在结果中 ✅
+# 实验 3：read=true + publishedAfter: "2天前" → 目标文章不在结果中 ❌
+# 实验 4：read=true + publishedAfter: "文章时间+1秒" → 在 ✅
+# 实验 5：read=true + publishedAfter: "文章时间-1秒" → 不在 ❌
+```
+
+**关键发现**：Folo API 的 `publishedAfter` 参数真实语义是**倒序分页游标**（"返回发布时间早于此的文章"），不是正向时间过滤器。命名具有误导性。
+
+### 53.3 三重根因
+
+#### 根因 A：`_refreshRecentReadWindow` 使用 `publishedAfter` 方向相反
+
+```dart
+// timeline_controller.dart _refreshRecentReadWindow()
+final windowStart = DateTime.now().subtract(Duration(days: 2));
+FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
+// publishedAfter 语义为"早于" → 返回的全部是窗口外的旧文章
+// 日志证实：拉回 4643 篇，全是 5月23日前的，独漏 5月25日的目标文章
+```
+
+#### 根因 B：`readStatus=false` 永久阻塞 `_applyUnreadSnapshot`
+
+用户在审核列表滑动保留文章 → `FilterReviewPage._keep` → `markAsUnreadLocal` → `readStatus.put(false)`。
+`_applyUnreadSnapshot` 遇到 `localOverride==false` 时 `continue` 跳过，永远不标记已读。
+且 `false` 没有任何清理路径，一旦写入就永久生效。
+
+#### 根因 C：`trustCompleteness` 全局与运算
+
+三个 API（feeds 未读 / social 未读 / inbox 未读）任意一个失败 → `hasError=true` → `trustCompleteness=false` → feeds 文章的已读推断也被跳过。inbox API 故障拖累所有文章类型。
+
+### 53.4 设计讨论
+
+**`readStatus` 三态语义收敛**：
+
+| 值 | 旧语义（混乱） | 新语义（收敛） |
+|----|---------------|---------------|
+| `null` | 无覆盖 | 无覆盖，信任服务端（不变） |
+| `true` | 曾被系统或用户标记为已读 | 仅用户标已读时的临时保护锁，同步结束（成败均）释放 |
+| `false` | 系统（审核保留）或用户（恢复未读）写入 | **不再写入**。历史遗留 `false` 由 `_applyUnreadSnapshot` 自动清除 |
+
+**核心设计原则**：
+- **用户操作** → 写 `readStatus=true`（临时锁）+ 入 pending 队列 → 同步成功后删 key
+- **系统推断** → 只写 `articleDb.isRead`，不碰 `readStatus`
+- **审核保留** → 只清 AI 标记，不创建任何 readStatus 覆盖
+- **失败回退** → 删 readStatus，回退 articleDb，不残留
+
+### 53.5 具体改动
+
+#### 文件 1：`lib/pages/timeline/filter_review_page.dart`
+- `_keep()`：删除 `markAsUnreadLocal` 调用，改为 `GStorage.readStatus.delete()` + 从 DB 重读文章更新 `TimelineController.allArticles` 内存状态
+
+#### 文件 2：`lib/pages/timeline/timeline_controller.dart`
+- `_applyUnreadSnapshot()`：签名从 `{bool trustCompleteness}` 改为 `{bool feedsOk, bool socialOk, bool inboxOk}`；按文章 category 独立判定对应 API 是否成功；`localOverride==false` 时删除而非跳过；不写 `readStatus=true`
+- `markAsUnreadLocal()`：删除 `GStorage.readStatus.put(entryId, false)`，只更新 articleDb
+- `_refreshRecentReadWindow()`：去掉 `publishedAfter` 参数；改用 `getEntries(limit:200)` 拉最新已读 + 本地按 `windowStart` 过滤
+- 删除临时 debug 日志和 `flutter/foundation.dart` import
+
+#### 文件 3：`lib/pages/feed_detail/feed_detail_page.dart`
+- `_applyUnreadSnapshot()` 和 `_refreshRecentReadWindow()` 与 timeline 完全相同的修复
+- 调用点：`allSucceeded` 与运算替换为 `feedsOk/socialOk/inboxOk` 三独立标志
+
+#### 文件 4：`lib/pages/article/article_page.dart`
+- `markAsRead()`：同步成功或失败后均 `GStorage.readStatus.delete()`（释放保护锁）；失败回退不写 `false`
+- `markAsUnread()`：删除 `GStorage.readStatus.put(entryId, false)`；失败回退仍写 `true`（正确）
+
+### 53.6 行为变化对照
+
+| 场景 | 旧行为 | 新行为 |
+|------|--------|--------|
+| 审核列表滑保留 → 别处读完 → 刷新 | ❌ 仍显示未读（`false` 阻塞） | ✅ 正确标记已读 |
+| 文章页标已读 + 同步成功 | `readStatus=true` 残留 | `readStatus` 已删除 |
+| 文章页标已读 + 5次失败 | `readStatus=false` 残留 | `readStatus` 已删除，回退未读 |
+| inbox API 失败时刷新 | feeds 文章也不判定已读 | feeds 文章独立判定 |
+| 别处读完 >2天前发布的文章 | 路径② `publishedAfter` 方向错误 | ✅ 本地窗口过滤正确 |
+
+### 53.7 未改动文件
+
+- `read_sync_service.dart` — 队列机制保持不变，未来可扩展支持双向操作（markUnread）
+- `auto_filter_worker.dart` — `unReject()` 逻辑正确，未修改
+- `local_article_db_service.dart` — `upsertMany` 合并逻辑未修改（`readStatus` 收敛后，`localOverride` 只有 `true` 或 `null`）
