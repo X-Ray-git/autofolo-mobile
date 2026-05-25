@@ -141,7 +141,7 @@ class TimelineController extends GetxController {
     }
 
     if (unreadData.isNotEmpty || !hasError) {
-      _applyUnreadSnapshot(unreadData);
+      _applyUnreadSnapshot(unreadData, trustCompleteness: !hasError);
       _loadFromLocalDatabase();
     }
 
@@ -166,21 +166,31 @@ class TimelineController extends GetxController {
     return AppConstants.defaultReadSyncWindowDays;
   }
 
-  void _applyUnreadSnapshot(List<ArticleModel> unreadData) {
+  void _applyUnreadSnapshot(List<ArticleModel> unreadData,
+      {bool trustCompleteness = true}) {
     final unreadIds = unreadData.map((a) => a.entryId).toSet();
     final localArticles = LocalArticleDbService.readAllArticles();
-    for (final local in localArticles) {
-      if (unreadIds.contains(local.entryId)) continue;
-      final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
-      if (localOverride == false) continue;
-      GStorage.readStatus.put(local.entryId, true);
-      LocalArticleDbService.setReadState(local.entryId, true);
+    // 仅在数据完整时标记本地缺失文章为已读，避免部分 API 失败时误标记
+    if (trustCompleteness) {
+      for (final local in localArticles) {
+        if (unreadIds.contains(local.entryId)) continue;
+        final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
+        if (localOverride == false) continue;
+        GStorage.readStatus.put(local.entryId, true);
+        LocalArticleDbService.setReadState(local.entryId, true);
+      }
     }
 
+    // 收集待同步队列 ID，保护用户刚执行的乐观更新不被 API 旧数据覆盖
+    final pendingIds = ReadSyncService.pendingReadItems
+        .map((item) => item.entryId)
+        .toSet();
+
     // API 返回未读 → 清除本地旧已读标记，实现双向同步
+    // 跳过仍在待同步队列中的条目
     for (final article in unreadData) {
       final stale = GStorage.readStatus.get(article.entryId);
-      if (stale == true) {
+      if (stale == true && !pendingIds.contains(article.entryId)) {
         GStorage.readStatus.delete(article.entryId);
       }
     }

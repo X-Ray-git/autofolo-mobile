@@ -1719,7 +1719,8 @@ Tag: `v1.0.0-beta2`
   4. 随后 `LocalArticleDbService.upsertMany` 根据被删除后的空覆盖状态重新合并，将该文章状态重置为 `isRead: false`，但保留了它原本的 `isRejectedByAi: true` 标记。
   5. `FilterReviewPage` 监听到 `isRejectedByAi == true && !isRead`，导致该文章重新出现在审核列表中。
 - **建议修复方向**：
-  在 `TimelineController._applyUnreadSnapshot` 中删除本地已读状态前，应优先检查 `ReadSyncService.pendingReadItems`。
+  在 `TimelineController._applyUnreadSnapshot` 中删除本地已读状态前，应优先检查 `ReadSyncService.pendingReadItems`。如果该文章存在于待同步队列中，说明它是用户刚刚执行的乐观更新（Optimistic Update），此时应信任本地已读状态，**不要**因为 API 返回了旧的 "未读" 状态就将其覆盖和删除。
+- **实际修复**（2026-05-25）：已在 `TimelineController` 和 `FeedDetailController` 的 `_applyUnreadSnapshot` 中实施——收集 `pendingReadItems` entryId 集合，在 stale 清除循环中跳过仍待同步的条目。同时在方法签名中增加 `trustCompleteness` 参数，部分 API 失败时跳过"标记本地缺失文章为已读"的第一个循环（参见 §52.12）。
 
 ## 52. 性能优化（2026-05-25）
 
@@ -1754,5 +1755,13 @@ Tag: `v1.0.0-beta2`
 ### 52.9 ReadSyncService 指数退避
 - 重试延迟从固定 `2s` 改为 `1s → 2s → 4s`（`Duration(seconds: 1 << retry)`）。
 
-### 52.10 遗留问题（原 #51.1 续）
-如果该文章存在于待同步队列中，说明它是用户刚刚执行的乐观更新（Optimistic Update），此时应信任本地已读状态，**不要**因为 API 返回了旧的“未读”状态就将其覆盖和删除。
+### 52.10 审核列表复活修复 (§51.1)
+- 已在 `_applyUnreadSnapshot` 的 stale 清除循环中增加 `ReadSyncService.pendingReadItems` 守卫。
+- `TimelineController` 和 `FeedDetailController` 均已修复。“未读”状态就将其覆盖和删除。
+
+### 52.11 遗留问题：部分接口网络失败导致未读文章“闪烁”
+- **现象描述**：用户在网络不稳定的情况下刷新（例如 feeds 接口超时失败，但 social 接口成功返回），界面上部分未读文章会突然消失（表现为 0 未读）；而在网络恢复后的下一次刷新中，这些文章又会突然重新出现。
+- **根本原因**：`TimelineController`（以及 `FeedDetailController` 针对非 feeds 的请求失败时）存在部分网络失败的数据误判逻辑。当部分 API 成功时，`hasError && unreadData.isEmpty` 条件不成立，代码会继续调用 `_applyUnreadSnapshot(unreadData)`。由于 `unreadData` 缺少了失败接口的数据，快照对比逻辑会误以为这些本地未读文章在云端已经被标为已读，从而错误地将它们在本地标记为已读并隐藏。
+- **自我修复机制**：这种错误标记由于未经过 `ReadSyncService` 同步到服务器，所以在下一次网络成功的刷新中，服务器依然会返回未读状态。`_applyUnreadSnapshot` 发现后，会删除错误的本地已读标记，从而使文章重新出现。这保护了数据不丢失，但严重影响了 UX。
+- **处理建议**：待后续讨论制定针对部分网络失败的精确快照对齐方案。
+- **实际修复**（2026-05-25）：`_applyUnreadSnapshot` 新增 `trustCompleteness` 参数。部分 API 失败时跳过"标记本地缺失文章为已读"循环，避免不完整数据误标记。`TimelineController.loadData()` 传入 `trustCompleteness: !hasError`；`FeedDetailController.loadData()` 传入三路全部成功的与运算结果。
