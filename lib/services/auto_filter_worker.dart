@@ -159,6 +159,7 @@ abstract final class AutoFilterWorker {
     raw['filterReason'] = null;
     raw['filterReviewed'] = true;
     GStorage.articleDb.put(entryId, raw);
+    LocalArticleDbService.invalidateCache();
     ArticleStateNotifier.tick(entryId);
   }
 }

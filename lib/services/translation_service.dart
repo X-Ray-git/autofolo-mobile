@@ -517,10 +517,11 @@ HTML：
     return chunks;
   }
 
+  static final _blockTagRe = RegExp(r'<(p|h[1-6]|li|blockquote|div|ul|ol|table)\b[^>]*>');
+
   static int _findNextBlockTag(String html, int from) {
     // 匹配 from 之后下一个块级标签的起始位置
-    final pattern = RegExp(r'<(p|h[1-6]|li|blockquote|div|ul|ol|table)\b[^>]*>');
-    final idx = html.indexOf(pattern, from);
+    final idx = html.indexOf(_blockTagRe, from);
     return idx;
   }
 

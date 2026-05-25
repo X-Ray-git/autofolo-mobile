@@ -46,6 +46,12 @@ abstract final class ArticleContentUtils {
     'ol',
   };
 
+  static final _multipleBrRe = RegExp(r'(<br\s*/?>\s*){3,}', caseSensitive: false);
+  static final _emptyParagraphRe = RegExp(
+    r'<p>\s*(?:&nbsp;|\u00A0|<br\s*/?>|\s)*\s*</p>',
+    caseSensitive: false,
+  );
+
   static String normalizeHtml(String rawHtml) {
     final normalized = rawHtml.trim();
     if (normalized.isEmpty) return '';
@@ -60,17 +66,8 @@ abstract final class ArticleContentUtils {
     _flattenLayoutTables(fragment);
 
     var html = _fragmentToHtml(fragment);
-    html = html.replaceAll(
-      RegExp(r'(<br\s*/?>\s*){3,}', caseSensitive: false),
-      '<br><br>',
-    );
-    html = html.replaceAll(
-      RegExp(
-        r'<p>\s*(?:&nbsp;|\u00A0|<br\s*/?>|\s)*\s*</p>',
-        caseSensitive: false,
-      ),
-      '',
-    );
+    html = html.replaceAll(_multipleBrRe, '<br><br>');
+    html = html.replaceAll(_emptyParagraphRe, '');
     return html.trim();
   }
 
@@ -166,6 +163,8 @@ abstract final class ArticleContentUtils {
     }
   }
 
+  static final _whitespaceCollapseRe = RegExp(r'[\u00A0\s]+');
+
   static void _removeEmptyBlocks(dom.DocumentFragment fragment) {
     bool changed = true;
     while (changed) {
@@ -174,7 +173,7 @@ abstract final class ArticleContentUtils {
         if (!_blockTags.contains(element.localName)) continue;
         if (_hasMediaChild(element)) continue;
 
-        final text = element.text.replaceAll(RegExp(r'[\u00A0\s]+'), '').trim();
+        final text = element.text.replaceAll(_whitespaceCollapseRe, '').trim();
         if (text.isNotEmpty) continue;
 
         final hasNonBreakChild = element.children.any(
@@ -233,6 +232,8 @@ abstract final class ArticleContentUtils {
     }
   }
 
+  static final _hiddenStyleRe = RegExp(r'opacity\s*:\s*0\b');
+
   /// 剔除隐藏元素：style="display:none" / visibility:hidden / opacity:0
   static void _removeHiddenElements(dom.DocumentFragment fragment) {
     final toRemove = <dom.Element>[];
@@ -243,7 +244,7 @@ abstract final class ArticleContentUtils {
           style.contains('display: none') ||
           style.contains('visibility:hidden') ||
           style.contains('visibility: hidden') ||
-          RegExp(r'opacity\s*:\s*0\b').hasMatch(style)) {
+          _hiddenStyleRe.hasMatch(style)) {
         toRemove.add(el);
       }
     }

@@ -6,6 +6,7 @@ import 'package:flutter_html/flutter_html.dart';
 
 import '../../../utils/article_content_utils.dart';
 import '../../../utils/html_chunk_parser.dart';
+import '../../../utils/html_contrast_utils.dart';
 import '../../../services/article_image_service.dart';
 import 'inline_video_player.dart';
 
@@ -93,8 +94,12 @@ class HtmlChunkCard extends StatelessWidget {
   // ── 段落 ──
 
   Widget _buildParagraph(BuildContext context, ColorScheme cs) {
+    String htmlData = '<p>${chunk.content}</p>';
+    if (Theme.of(context).brightness == Brightness.dark) {
+      htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
+    }
     return Html(
-      data: '<p>${chunk.content}</p>',
+      data: htmlData,
       style: {
         'p': Style(
           fontSize: FontSize(16),
@@ -172,7 +177,9 @@ class HtmlChunkCard extends StatelessWidget {
         border: Border(left: BorderSide(color: cs.primary, width: 4)),
       ),
       child: Html(
-        data: chunk.content,
+        data: Theme.of(context).brightness == Brightness.dark
+            ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
+            : chunk.content,
         style: {
           'body': Style(
             fontSize: FontSize(15),
@@ -195,7 +202,9 @@ class HtmlChunkCard extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Html(
-        data: chunk.content,
+        data: Theme.of(context).brightness == Brightness.dark
+            ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
+            : chunk.content,
         style: {
           'table': Style(
             border: Border.all(color: cs.outlineVariant),
@@ -427,7 +436,9 @@ class HtmlChunkCard extends StatelessWidget {
 
   Widget _buildRawHtml(BuildContext context, ColorScheme cs) {
     return Html(
-      data: chunk.content,
+      data: Theme.of(context).brightness == Brightness.dark
+          ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
+          : chunk.content,
       style: {
         'body': Style(
           fontSize: FontSize(16),

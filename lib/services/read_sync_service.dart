@@ -133,7 +133,7 @@ abstract final class ReadSyncService {
             ok = true;
             break;
           }
-          if (retry < 2) await Future.delayed(const Duration(seconds: 2));
+          if (retry < 2) await Future.delayed(Duration(seconds: 1 << retry));
         }
         if (ok) removeMany(chunk);
       }

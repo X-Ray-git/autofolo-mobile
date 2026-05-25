@@ -571,15 +571,26 @@ class _FeedIcon extends StatelessWidget {
       return Icon(Icons.rss_feed,
           size: size, color: cs.onSurfaceVariant.withValues(alpha: 0.6));
     }
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cacheWidth = (size * dpr).round();
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(3),
-      child: Image(
-        image: CachedNetworkImageProvider(proxyUrl),
+      child: CachedNetworkImage(
+        imageUrl: proxyUrl,
+        httpHeaders: ArticleImageService.httpHeaders,
         width: size,
         height: size,
+        memCacheWidth: cacheWidth,
+        memCacheHeight: cacheWidth,
+        maxWidthDiskCache: cacheWidth * 2,
+        maxHeightDiskCache: cacheWidth * 2,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Icon(Icons.rss_feed,
-            size: size, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+        errorWidget: (context, url, error) => Icon(
+          Icons.rss_feed,
+          size: size,
+          color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+        ),
       ),
     );
   }

@@ -87,11 +87,13 @@ abstract final class SourceTaxonomy {
     return '收件箱';
   }
 
+  static final _whitespaceRe = RegExp(r'\s+');
+
   static String _normalizeInboxLabel(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return '';
 
-    final lower = trimmed.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+    final lower = trimmed.toLowerCase().replaceAll(_whitespaceRe, '');
     if (lower.contains('x-ray') || lower.contains('xray')) {
       return 'x-ray';
     }

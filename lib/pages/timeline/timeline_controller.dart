@@ -27,6 +27,7 @@ class TimelineController extends GetxController {
   final articles = <ArticleModel>[].obs;
   final allArticles = <ArticleModel>[].obs;
   final selectedMode = TimelineViewMode.unread.obs;
+  final filterCount = 0.obs;
 
   String? _cursor;
   bool _isLoadingMore = false;
@@ -92,22 +93,26 @@ class TimelineController extends GetxController {
       loadingState.value = const Loading();
     }
 
-    final feedsResult = await FeedHttp.collectEntries(
-      view: 0,
-      withContent: true,
-      feedMap: _feedMap,
-    );
+    final results = await Future.wait([
+      FeedHttp.collectEntries(
+        view: 0,
+        withContent: true,
+        feedMap: _feedMap,
+      ),
+      FeedHttp.collectEntries(
+        view: 1,
+        withContent: true,
+        feedMap: _feedMap,
+      ),
+      FeedHttp.collectAllInboxEntries(
+        limit: 100,
+        withContent: true,
+      ),
+    ]);
 
-    final socialResult = await FeedHttp.collectEntries(
-      view: 1,
-      withContent: true,
-      feedMap: _feedMap,
-    );
-
-    final inboxResult = await FeedHttp.collectAllInboxEntries(
-      limit: 100,
-      withContent: true,
-    );
+    final feedsResult = results[0];
+    final socialResult = results[1];
+    final inboxResult = results[2];
 
     final unreadData = <ArticleModel>[];
     bool hasError = false;
@@ -136,7 +141,7 @@ class TimelineController extends GetxController {
     }
 
     if (unreadData.isNotEmpty || !hasError) {
-      _applyUnreadSnapshot(unreadData);
+      _applyUnreadSnapshot(unreadData, trustCompleteness: !hasError);
       _loadFromLocalDatabase();
     }
 
@@ -161,21 +166,31 @@ class TimelineController extends GetxController {
     return AppConstants.defaultReadSyncWindowDays;
   }
 
-  void _applyUnreadSnapshot(List<ArticleModel> unreadData) {
+  void _applyUnreadSnapshot(List<ArticleModel> unreadData,
+      {bool trustCompleteness = true}) {
     final unreadIds = unreadData.map((a) => a.entryId).toSet();
     final localArticles = LocalArticleDbService.readAllArticles();
-    for (final local in localArticles) {
-      if (unreadIds.contains(local.entryId)) continue;
-      final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
-      if (localOverride == false) continue;
-      GStorage.readStatus.put(local.entryId, true);
-      LocalArticleDbService.setReadState(local.entryId, true);
+    // 仅在数据完整时标记本地缺失文章为已读，避免部分 API 失败时误标记
+    if (trustCompleteness) {
+      for (final local in localArticles) {
+        if (unreadIds.contains(local.entryId)) continue;
+        final localOverride = LocalArticleDbService.readOverrideOf(local.entryId);
+        if (localOverride == false) continue;
+        GStorage.readStatus.put(local.entryId, true);
+        LocalArticleDbService.setReadState(local.entryId, true);
+      }
     }
 
+    // 收集待同步队列 ID，保护用户刚执行的乐观更新不被 API 旧数据覆盖
+    final pendingIds = ReadSyncService.pendingReadItems
+        .map((item) => item.entryId)
+        .toSet();
+
     // API 返回未读 → 清除本地旧已读标记，实现双向同步
+    // 跳过仍在待同步队列中的条目
     for (final article in unreadData) {
       final stale = GStorage.readStatus.get(article.entryId);
-      if (stale == true) {
+      if (stale == true && !pendingIds.contains(article.entryId)) {
         GStorage.readStatus.delete(article.entryId);
       }
     }
@@ -196,21 +211,26 @@ class TimelineController extends GetxController {
         Duration(days: _readSyncWindowDays),
       );
 
-      final feedsReadResult = await FeedHttp.collectEntries(
-        view: 0,
-        read: true,
-        withContent: true,
-        publishedAfter: windowStart.toUtc().toIso8601String(),
-        feedMap: _feedMap,
-      );
+      final isoStr = windowStart.toUtc().toIso8601String();
+      final readResults = await Future.wait([
+        FeedHttp.collectEntries(
+          view: 0,
+          read: true,
+          withContent: true,
+          publishedAfter: isoStr,
+          feedMap: _feedMap,
+        ),
+        FeedHttp.collectEntries(
+          view: 1,
+          read: true,
+          withContent: true,
+          publishedAfter: isoStr,
+          feedMap: _feedMap,
+        ),
+      ]);
 
-      final socialReadResult = await FeedHttp.collectEntries(
-        view: 1,
-        read: true,
-        withContent: true,
-        publishedAfter: windowStart.toUtc().toIso8601String(),
-        feedMap: _feedMap,
-      );
+      final feedsReadResult = readResults[0];
+      final socialReadResult = readResults[1];
 
       final readData = <ArticleModel>[];
       if (feedsReadResult is Success<List<ArticleModel>>) {
@@ -329,7 +349,7 @@ class TimelineController extends GetxController {
       }
     }
   }
-  List<ArticleModel> get searchSourceArticles => allArticles.toList();
+  List<ArticleModel> get searchSourceArticles => allArticles;
   String get emptyMessage => switch (selectedMode.value) {
     TimelineViewMode.unread => '没有未读文章',
     TimelineViewMode.all => '本地文章库为空',
@@ -348,6 +368,7 @@ class TimelineController extends GetxController {
     final local = LocalArticleDbService.readAllArticles();
     allArticles.value = _mergeLocalReadState(local);
     _applyFilter();
+    _updateFilterCount();
     if (allArticles.isNotEmpty ||
         selectedMode.value != TimelineViewMode.unread) {
       loadingState.value = Success(articles.toList());
@@ -365,42 +386,50 @@ class TimelineController extends GetxController {
     articles.value = filtered;
   }
 
-  void _updateReadStateInMemory(String entryId, bool isRead) {
-    bool changed = false;
-    final updatedAll = allArticles.map((a) {
-      if (a.entryId != entryId) return a;
-      changed = true;
-      return ArticleModel(
-        entryId: a.entryId,
-        feedId: a.feedId,
-        feedTitle: a.feedTitle,
-        feedImage: a.feedImage,
-        title: a.title,
-        url: a.url,
-        content: a.content,
-        publishedAt: a.publishedAt,
-        isRead: isRead,
-        category: a.category,
-        subscriptionCategory: a.subscriptionCategory,
-        author: a.author,
-        imageUrl: a.imageUrl,
-        isRejectedByAi: a.isRejectedByAi,
-        filterReason: a.filterReason,
-        filterReviewed: a.filterReviewed,
-      );
-    }).toList();
-
-    if (changed) {
-      allArticles.value = updatedAll;
-      _applyFilter();
-      loadingState.value = Success(articles.toList());
+  void _updateFilterCount() {
+    int count = 0;
+    for (final a in allArticles) {
+      if (a.isRejectedByAi && !a.isRead) count++;
     }
+    filterCount.value = count;
+  }
+
+  void _updateReadStateInMemory(String entryId, bool isRead) {
+    final idx = allArticles.indexWhere((a) => a.entryId == entryId);
+    if (idx < 0) return;
+
+    final a = allArticles[idx];
+    if (a.isRead == isRead) return;
+
+    final updated = ArticleModel(
+      entryId: a.entryId,
+      feedId: a.feedId,
+      feedTitle: a.feedTitle,
+      feedImage: a.feedImage,
+      title: a.title,
+      url: a.url,
+      content: a.content,
+      publishedAt: a.publishedAt,
+      isRead: isRead,
+      category: a.category,
+      subscriptionCategory: a.subscriptionCategory,
+      author: a.author,
+      imageUrl: a.imageUrl,
+      isRejectedByAi: a.isRejectedByAi,
+      filterReason: a.filterReason,
+      filterReviewed: a.filterReviewed,
+    );
+    allArticles[idx] = updated;
+    allArticles.refresh();
+    _applyFilter();
+    _updateFilterCount();
+    loadingState.value = Success(articles.toList());
   }
 
   List<ArticleModel> _mergeLocalReadState(List<ArticleModel> source) {
     return source.map((a) {
       final readVal = GStorage.readStatus.get(a.entryId);
-      if (readVal == true) {
+      if (readVal == true && !a.isRead) {
         return ArticleModel(
           entryId: a.entryId,
           feedId: a.feedId,

@@ -1693,3 +1693,75 @@ Tag: `v1.0.0-beta2`
 - **现象**：文章《Tencent Open-Sources TencentDB Agent Memory: A 4-Tier Local Memory Pipeline for AI Agents》在渲染和滚动时存在轻微卡顿。
 - **状态**：该问题在 `main` 和 `fix-video-summary-ui` 分支均存在，属于历史遗留或 `flutter_html` 针对特定 DOM 结构（可能是超长的 `<pre>`、深层嵌套或者特定的 Markdown 转换残留）的解析性能瓶颈。
 - **建议**：后续需要对这类出现卡顿的特殊文章进行 Profile，分析是在布局计算 (Layout) 还是 `HtmlChunkParser` 解析时耗时过长。可能需要对 `flutter_html` 的特定组件进行缓存优化，或者针对超大代码块增加局部懒加载机制。
+
+## 50. 深色模式 HTML 字体对比度动态调整 (2026-05-25)
+
+### 50.1 问题背景
+深色模式下，部分带有内联样式（如 `<span style="color: #333333;">`）的文章文本会因为与深色背景对比度过低而难以阅读。
+
+### 50.2 核心实现
+- **`lib/utils/color_parser.dart`**：实现了 CSS 颜色字符串到 Flutter `Color` 的解析，支持 hex, rgb, rgba 以及基础颜色名。全面适配了新版 Flutter Color API（如 `r`, `g`, `b`, `a` 属性）。
+- **`lib/utils/html_contrast_utils.dart`**：
+  - 基于 `package:html` 解析 HTML 片段。
+  - 在深色模式下，检测内联 `color` 属性与 `Theme.of(context).colorScheme.surface` 的对比度。
+  - 采用渐进式白平衡混合（`Color.lerp`）提亮过深的文字颜色，直到符合 WCAG 对比度阈值要求（4.5:1）。
+  - 内置 LRU 缓存，避免列表滚动时重复解析同一 HTML 片段带来的性能损耗。
+- **`lib/pages/article/widgets/html_chunk_card.dart`**：在 `Theme.of(context).brightness == Brightness.dark` 时，对 `paragraph`、`blockquote`、`table` 和 `rawHtml` 块调用 `HtmlContrastUtils.adjustHtmlContrast`，实现了无感的动态文字颜色自适应。
+
+## 51. 遗留问题与已知缺陷 (2026-05-25)
+
+### 51.1 审核列表快速刷新导致被拒文章“复活”问题
+- **现象**：当在“垃圾拦截（审核列表）”中左滑拒绝文章（标记为已读并加入 `ReadSyncService` 后台同步队列）后，如果立刻切回时间线进行下拉刷新，刚才被拒绝的文章会再次出现在审核列表中。但如果等待较长时间（让后台同步完成）后再刷新，则不会出现此问题。
+- **根因分析**：
+  1. 左滑拒绝后，本地数据库标记该文章为已读，并将其放入 `ReadSyncService` 队列等待同步给 Folo API。
+  2. 此时立即下拉刷新，向 Folo API 请求未读列表。由于后台同步还未完成，API 依然返回该文章状态为“未读”。
+  3. `TimelineController._applyUnreadSnapshot` 中存在“双向同步兜底逻辑”：如果 API 返回未读，则强行删除本地的已读状态 (`GStorage.readStatus.delete`)。
+  4. 随后 `LocalArticleDbService.upsertMany` 根据被删除后的空覆盖状态重新合并，将该文章状态重置为 `isRead: false`，但保留了它原本的 `isRejectedByAi: true` 标记。
+  5. `FilterReviewPage` 监听到 `isRejectedByAi == true && !isRead`，导致该文章重新出现在审核列表中。
+- **建议修复方向**：
+  在 `TimelineController._applyUnreadSnapshot` 中删除本地已读状态前，应优先检查 `ReadSyncService.pendingReadItems`。如果该文章存在于待同步队列中，说明它是用户刚刚执行的乐观更新（Optimistic Update），此时应信任本地已读状态，**不要**因为 API 返回了旧的 "未读" 状态就将其覆盖和删除。
+- **实际修复**（2026-05-25）：已在 `TimelineController` 和 `FeedDetailController` 的 `_applyUnreadSnapshot` 中实施——收集 `pendingReadItems` entryId 集合，在 stale 清除循环中跳过仍待同步的条目。同时在方法签名中增加 `trustCompleteness` 参数，部分 API 失败时跳过"标记本地缺失文章为已读"的第一个循环（参见 §52.12）。
+
+## 52. 性能优化（2026-05-25）
+
+> 不影响任何现有功能与体验，`dart analyze` 零新增 warning，`flutter build apk --debug` 通过。
+
+### 52.1 API 请求并行化
+- `TimelineController.loadData()` 和 `FeedDetailController.loadData()` 中 3 个串行 `await`（feeds / social / inbox）改为 `Future.wait` 并行。
+- `_refreshRecentReadWindow()` 中 2 个串行 `await`（feeds read / social read）同样改为 `Future.wait`。
+
+### 52.2 正则表达式编译缓存
+- `translation_service.dart`、`article_content_utils.dart`、`html_chunk_parser.dart`、`source_taxonomy.dart` 共 9 处方法内 `RegExp(...)` 提升为 `static final` 常量。
+
+### 52.3 不必要的 ArticleModel 全字段拷贝消除
+- `_mergeLocalReadState()` 增加守卫条件：只在本地 readState 与当前 `isRead` 不同时才创建新对象。
+- `_updateReadStateInMemory()` 从 `.map()` 全列表遍历改为 `indexWhere` 单点定位。
+
+### 52.4 searchSourceArticles 去拷贝
+- `TimelineController.searchSourceArticles` 从 `allArticles.toList()` 改为直接返回 `allArticles` 引用。
+
+### 52.5 骨架屏动画代码去重
+- 新增 `ShimmerFadeList`（`lib/common/widgets/shimmer_card.dart`），三处独立动画控制器替换为统一组件。
+
+### 52.6 Hive 批量写入
+- `LlmConfig._save()` 中 6 次 `await put` 合并为 1 次 `await putAll`。
+
+### 52.7 AI 过滤计数增量更新
+- `TimelineController` 新增 `filterCount` RxInt，不再每次 rebuild 全量遍历 `readAllArticles()`。
+
+### 52.8 FeedDetail 重复 upsertMany 移除
+- `FeedDetailController._applyUnreadSnapshot()` 中 stale 清除循环前的冗余调用已删除。
+
+### 52.9 ReadSyncService 指数退避
+- 重试延迟从固定 `2s` 改为 `1s → 2s → 4s`（`Duration(seconds: 1 << retry)`）。
+
+### 52.10 审核列表复活修复 (§51.1)
+- 已在 `_applyUnreadSnapshot` 的 stale 清除循环中增加 `ReadSyncService.pendingReadItems` 守卫。
+- `TimelineController` 和 `FeedDetailController` 均已修复。“未读”状态就将其覆盖和删除。
+
+### 52.11 遗留问题：部分接口网络失败导致未读文章“闪烁”
+- **现象描述**：用户在网络不稳定的情况下刷新（例如 feeds 接口超时失败，但 social 接口成功返回），界面上部分未读文章会突然消失（表现为 0 未读）；而在网络恢复后的下一次刷新中，这些文章又会突然重新出现。
+- **根本原因**：`TimelineController`（以及 `FeedDetailController` 针对非 feeds 的请求失败时）存在部分网络失败的数据误判逻辑。当部分 API 成功时，`hasError && unreadData.isEmpty` 条件不成立，代码会继续调用 `_applyUnreadSnapshot(unreadData)`。由于 `unreadData` 缺少了失败接口的数据，快照对比逻辑会误以为这些本地未读文章在云端已经被标为已读，从而错误地将它们在本地标记为已读并隐藏。
+- **自我修复机制**：这种错误标记由于未经过 `ReadSyncService` 同步到服务器，所以在下一次网络成功的刷新中，服务器依然会返回未读状态。`_applyUnreadSnapshot` 发现后，会删除错误的本地已读标记，从而使文章重新出现。这保护了数据不丢失，但严重影响了 UX。
+- **处理建议**：待后续讨论制定针对部分网络失败的精确快照对齐方案。
+- **实际修复**（2026-05-25）：`_applyUnreadSnapshot` 新增 `trustCompleteness` 参数。部分 API 失败时跳过"标记本地缺失文章为已读"循环，避免不完整数据误标记。`TimelineController.loadData()` 传入 `trustCompleteness: !hasError`；`FeedDetailController.loadData()` 传入三路全部成功的与运算结果。

@@ -6,6 +6,12 @@ abstract final class LocalArticleDbService {
   static const String _metaPrefix = '__meta__';
   static const int _maxArticles = 5000;
 
+  static List<ArticleModel>? _cachedAllArticles;
+
+  static void invalidateCache() {
+    _cachedAllArticles = null;
+  }
+
   static Iterable<String> get _articleKeys {
     return GStorage.articleDb.keys.whereType<String>().where(
       (k) => !k.startsWith(_metaPrefix),
@@ -13,6 +19,10 @@ abstract final class LocalArticleDbService {
   }
 
   static List<ArticleModel> readAllArticles() {
+    if (_cachedAllArticles != null) {
+      return _cachedAllArticles!;
+    }
+    
     final items = <ArticleModel>[];
     for (final key in _articleKeys) {
       final raw = GStorage.articleDb.get(key);
@@ -20,6 +30,7 @@ abstract final class LocalArticleDbService {
       items.add(ArticleModel.fromCache(Map<String, dynamic>.from(raw)));
     }
     items.sort(_compareArticleByTimeDesc);
+    _cachedAllArticles = items;
     return items;
   }
 
@@ -30,6 +41,9 @@ abstract final class LocalArticleDbService {
   }
 
   static void upsertMany(List<ArticleModel> source, {bool? defaultReadState}) {
+    if (source.isEmpty) return;
+    final updates = <String, dynamic>{};
+
     for (final item in source) {
       if (item.entryId.isEmpty) continue;
 
@@ -59,7 +73,6 @@ abstract final class LocalArticleDbService {
           final newItemContent = item.content ?? '';
           final existingContent = existing?.content ?? '';
           if (newItemContent.isNotEmpty && existingContent.isNotEmpty) {
-            // 如果本地已有长文（可能被 Readability 扩充过），而新同步的只是短摘要，则保留本地长文
             if (existingContent.length > newItemContent.length + 100) {
               return existingContent;
             }
@@ -87,7 +100,12 @@ abstract final class LocalArticleDbService {
         filterReviewed: item.filterReviewed || (existing?.filterReviewed ?? false),
       );
 
-      GStorage.articleDb.put(item.entryId, merged.toJson());
+      updates[item.entryId] = merged.toJson();
+    }
+
+    if (updates.isNotEmpty) {
+      GStorage.articleDb.putAll(updates);
+      invalidateCache();
     }
 
     _trimOverflow();
@@ -121,6 +139,7 @@ abstract final class LocalArticleDbService {
       filterReviewed: old.filterReviewed,
     );
     GStorage.articleDb.put(entryId, updated.toJson());
+    invalidateCache();
   }
 
   static int _compareArticleByTimeDesc(ArticleModel a, ArticleModel b) {
@@ -141,10 +160,17 @@ abstract final class LocalArticleDbService {
 
     final sorted = readAllArticles();
     final keepIds = sorted.take(_maxArticles).map((e) => e.entryId).toSet();
+    
+    final toDelete = <String>[];
     for (final key in keys) {
       if (!keepIds.contains(key)) {
-        GStorage.articleDb.delete(key);
+        toDelete.add(key);
       }
+    }
+    
+    if (toDelete.isNotEmpty) {
+      GStorage.articleDb.deleteAll(toDelete);
+      invalidateCache();
     }
   }
 }
