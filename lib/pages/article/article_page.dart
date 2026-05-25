@@ -486,7 +486,9 @@ class _ArticlePagerPageState extends State<_ArticlePagerPage> {
     return PageView.builder(
       controller: _pageController,
       itemCount: articles.length,
-      onPageChanged: (index) => setState(() => _currentIndex = index),
+      onPageChanged: (index) {
+        _currentIndex = index;
+      },
       itemBuilder: (context, index) => ArticlePageView(
         key: ValueKey(articles[index].entryId),
         article: articles[index],
