@@ -1693,3 +1693,17 @@ Tag: `v1.0.0-beta2`
 - **现象**：文章《Tencent Open-Sources TencentDB Agent Memory: A 4-Tier Local Memory Pipeline for AI Agents》在渲染和滚动时存在轻微卡顿。
 - **状态**：该问题在 `main` 和 `fix-video-summary-ui` 分支均存在，属于历史遗留或 `flutter_html` 针对特定 DOM 结构（可能是超长的 `<pre>`、深层嵌套或者特定的 Markdown 转换残留）的解析性能瓶颈。
 - **建议**：后续需要对这类出现卡顿的特殊文章进行 Profile，分析是在布局计算 (Layout) 还是 `HtmlChunkParser` 解析时耗时过长。可能需要对 `flutter_html` 的特定组件进行缓存优化，或者针对超大代码块增加局部懒加载机制。
+
+## 50. 深色模式 HTML 字体对比度动态调整 (2026-05-25)
+
+### 50.1 问题背景
+深色模式下，部分带有内联样式（如 `<span style="color: #333333;">`）的文章文本会因为与深色背景对比度过低而难以阅读。
+
+### 50.2 核心实现
+- **`lib/utils/color_parser.dart`**：实现了 CSS 颜色字符串到 Flutter `Color` 的解析，支持 hex, rgb, rgba 以及基础颜色名。全面适配了新版 Flutter Color API（如 `r`, `g`, `b`, `a` 属性）。
+- **`lib/utils/html_contrast_utils.dart`**：
+  - 基于 `package:html` 解析 HTML 片段。
+  - 在深色模式下，检测内联 `color` 属性与 `Theme.of(context).colorScheme.surface` 的对比度。
+  - 采用渐进式白平衡混合（`Color.lerp`）提亮过深的文字颜色，直到符合 WCAG 对比度阈值要求（4.5:1）。
+  - 内置 LRU 缓存，避免列表滚动时重复解析同一 HTML 片段带来的性能损耗。
+- **`lib/pages/article/widgets/html_chunk_card.dart`**：在 `Theme.of(context).brightness == Brightness.dark` 时，对 `paragraph`、`blockquote`、`table` 和 `rawHtml` 块调用 `HtmlContrastUtils.adjustHtmlContrast`，实现了无感的动态文字颜色自适应。
