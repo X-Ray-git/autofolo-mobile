@@ -1707,3 +1707,16 @@ Tag: `v1.0.0-beta2`
   - 采用渐进式白平衡混合（`Color.lerp`）提亮过深的文字颜色，直到符合 WCAG 对比度阈值要求（4.5:1）。
   - 内置 LRU 缓存，避免列表滚动时重复解析同一 HTML 片段带来的性能损耗。
 - **`lib/pages/article/widgets/html_chunk_card.dart`**：在 `Theme.of(context).brightness == Brightness.dark` 时，对 `paragraph`、`blockquote`、`table` 和 `rawHtml` 块调用 `HtmlContrastUtils.adjustHtmlContrast`，实现了无感的动态文字颜色自适应。
+
+## 51. 遗留问题与已知缺陷 (2026-05-25)
+
+### 51.1 审核列表快速刷新导致被拒文章“复活”问题
+- **现象**：当在“垃圾拦截（审核列表）”中左滑拒绝文章（标记为已读并加入 `ReadSyncService` 后台同步队列）后，如果立刻切回时间线进行下拉刷新，刚才被拒绝的文章会再次出现在审核列表中。但如果等待较长时间（让后台同步完成）后再刷新，则不会出现此问题。
+- **根因分析**：
+  1. 左滑拒绝后，本地数据库标记该文章为已读，并将其放入 `ReadSyncService` 队列等待同步给 Folo API。
+  2. 此时立即下拉刷新，向 Folo API 请求未读列表。由于后台同步还未完成，API 依然返回该文章状态为“未读”。
+  3. `TimelineController._applyUnreadSnapshot` 中存在“双向同步兜底逻辑”：如果 API 返回未读，则强行删除本地的已读状态 (`GStorage.readStatus.delete`)。
+  4. 随后 `LocalArticleDbService.upsertMany` 根据被删除后的空覆盖状态重新合并，将该文章状态重置为 `isRead: false`，但保留了它原本的 `isRejectedByAi: true` 标记。
+  5. `FilterReviewPage` 监听到 `isRejectedByAi == true && !isRead`，导致该文章重新出现在审核列表中。
+- **建议修复方向**：
+  在 `TimelineController._applyUnreadSnapshot` 中删除本地已读状态前，应优先检查 `ReadSyncService.pendingReadItems`。如果该文章存在于待同步队列中，说明它是用户刚刚执行的乐观更新（Optimistic Update），此时应信任本地已读状态，**不要**因为 API 返回了旧的“未读”状态就将其覆盖和删除。
