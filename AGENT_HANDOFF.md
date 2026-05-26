@@ -1862,3 +1862,16 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 - `read_sync_service.dart` — 队列机制保持不变，未来可扩展支持双向操作（markUnread）
 - `auto_filter_worker.dart` — `unReject()` 逻辑正确，未修改
 - `local_article_db_service.dart` — `upsertMany` 合并逻辑未修改（`readStatus` 收敛后，`localOverride` 只有 `true` 或 `null`）
+
+### 53.8 遗留问题与安全分页方案研究（Pending Review & Next Steps）
+
+经过对最新提交 `551894e` 的复盘，整体修复方向非常正确，但仍遗留了两个体验和边缘 Case 问题。这两个问题当前记录在案，作为后续优化的储备，暂不执行代码修改。
+
+#### 遗留问题 1：App 切前台缺乏自动同步机制
+当前 `TimelineController.loadData()` 仅在应用冷启动（`onInit`）或用户手动下拉时触发。当用户在 Web 端阅读完毕，直接切回手机 Autofolo（从后台恢复）时，应用仍展示切入后台前的残像，导致用户误认为同步失败。
+- **储备方案**：为 `TimelineController` 混入 `WidgetsBindingObserver`，监听 `AppLifecycleState.resumed` 事件，结合时间防抖，在切前台时静默调用 `loadData()`。
+
+#### 遗留问题 2：近期已读 `_refreshRecentReadWindow` 的安全分页截断隐患
+当前代码将远古拉取的 Bug 修复为了单次请求：`FeedHttp.getEntries(limit: 200)`。
+- **隐患分析**：如果 API 的强制最大限制是 50（标准 REST 防护），或用户2天内阅读超过 200 篇，超出的文章将永远丢失。此外，单次请求 `limit: 200` 且携带 `withContent: true` 极易导致弱网超时。
+- **安全方案思路**：放弃单次拉取，实现严格的 `while` 循环分页。每次请求 `limit: 50`，获取数据后检查 `batch.last.publishedAt`。若最旧文章的时间尚未越过窗口底线（2天前），则将 `cursor` 设为 `batch.last.publishedAt` 继续请求下一页。直到 `batch.last.publishedAt < windowStart` 时安全退出循环。
