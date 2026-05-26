@@ -1875,3 +1875,33 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 当前代码将远古拉取的 Bug 修复为了单次请求：`FeedHttp.getEntries(limit: 200)`。
 - **隐患分析**：如果 API 的强制最大限制是 50（标准 REST 防护），或用户2天内阅读超过 200 篇，超出的文章将永远丢失。此外，单次请求 `limit: 200` 且携带 `withContent: true` 极易导致弱网超时。
 - **安全方案思路**：放弃单次拉取，实现严格的 `while` 循环分页。每次请求 `limit: 50`，获取数据后检查 `batch.last.publishedAt`。若最旧文章的时间尚未越过窗口底线（2天前），则将 `cursor` 设为 `batch.last.publishedAt` 继续请求下一页。直到 `batch.last.publishedAt < windowStart` 时安全退出循环。
+
+---
+
+## 54. 优化文章滑动渲染性能（2026-05-26）
+
+### 54.1 问题报告
+
+用户体验反馈：在阅读页面（`ArticlePageView`）横向滑动翻页时，UI 线程存在卡顿和掉帧现象。特别是在文章内容较长或者包含较多复杂元素时，滑动过程不够流畅。
+
+### 54.2 根因分析
+
+原先的 `_initContent` 方法在主隔离区（UI 线程）同步执行 HTML 解析和各种正则处理（包括 `ArticleContentUtils.normalizeHtml` 和 `HtmlChunkParser.parseSync` 等）。这些操作由于涉及大量字符串运算，会导致 UI 线程阻塞，从而在滑动切页时造成明显的掉帧卡顿。
+
+### 54.3 设计讨论与具体改动
+
+**核心思路**：将耗时的 HTML 解析操作卸载（Offload）到独立的 Isolate 中运行，释放 UI 线程的压力，确保页面滑动动画的 60fps/120fps 流畅渲染。
+
+**具体改动**：
+1. **引入 Isolate 并发处理**：修改 `ArticleController` 中的 `_initContent` 为异步方法（返回 `Future<void>`），并利用 Dart 的 `Isolate.run`，将 `ArticleContentUtils.normalizeHtml`、`ArticleContentUtils.extractImageUrls`、`HtmlChunkParser.parseSync`（原文及翻译文本）移至后台 Isolate 执行，最后将结果返回主线程进行数据绑定。
+2. **增加加载状态显示**：在 `ArticleController` 引入 `isParsingContent` 响应式变量，标识 Isolate 解析是否在进行。并在 `_ArticlePageViewState` 的 Sliver 列表渲染中，当 `isParsingContent` 为 true 时，展示一个居中的 `CircularProgressIndicator` 加载提示符（附带 "正在排版内容…" 字样），以填补 Isolate 计算期间的视觉空白，改善用户体验。
+3. **允许隐式滚动缓存**：在 `_ArticlePagerPageState` 返回的 `PageView.builder` 增加 `allowImplicitScrolling: true` 属性。此举允许 Flutter 在后台隐式预构建和缓存邻近的文章页面，配合 Isolate 的异步解析，使得用户滑动到下一页时，页面通常已经预排版完成，极大增强了操作丝滑感。
+
+### 54.4 行为变化对照
+
+| 场景 | 旧行为 | 新行为 |
+|------|--------|--------|
+| 文章加载与滑动 | UI 线程同步解析 HTML，易掉帧 | 后台 Isolate 异步解析，UI 线程无阻滞 |
+| 解析期间展示 | 无，主线程卡住或直接显示内容 | 显示优雅的加载动画（正在排版内容…） |
+| PageView 预渲染 | 未启用隐式缓存，滑动时才触发构建 | 开启隐式滚动，邻近页面提前触发 Isolate 解析与渲染 |
+

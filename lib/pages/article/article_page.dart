@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -45,6 +46,7 @@ class ArticleController extends GetxController {
   final isSummarizing = false.obs;
   final isFetchingReadability = false.obs;
   final isFetchingContent = false.obs;
+  final isParsingContent = false.obs;
 
   ArticleController(this.article);
 
@@ -68,29 +70,52 @@ class ArticleController extends GetxController {
     }
   }
 
-  void _initContent({String? overrideContent}) {
-    normalizedContent = ArticleContentUtils.normalizeHtml(
-      overrideContent ?? article.content ?? '',
-    );
-    imageUrls = ArticleContentUtils.extractImageUrls(normalizedContent);
-    chunks.value = HtmlChunkParser.parseSync(normalizedContent);
+  Future<void> _initContent({String? overrideContent}) async {
+    isParsingContent.value = true;
+    
+    final rawHtml = overrideContent ?? article.content ?? '';
+    final entryId = article.entryId;
+    final hasTranslation = TranslationService.hasTranslation(entryId);
+    final tContent = hasTranslation ? (TranslationService.translatedContentFor(entryId) ?? '') : '';
 
-    // 检查是否有翻译
-    if (TranslationService.hasTranslation(article.entryId)) {
-      isTranslated.value = true;
-      final tContent =
-          TranslationService.translatedContentFor(article.entryId) ?? '';
-      translationContent.value = tContent;
-      if (tContent.isNotEmpty) {
-        translatedChunks.value = HtmlChunkParser.parseSync(tContent);
+    try {
+      final result = await Isolate.run(() {
+        final normalized = ArticleContentUtils.normalizeHtml(rawHtml);
+        final urls = ArticleContentUtils.extractImageUrls(normalized);
+        final parsedChunks = HtmlChunkParser.parseSync(normalized);
+        
+        List<HtmlChunk> tParsedChunks = const [];
+        if (hasTranslation && tContent.isNotEmpty) {
+          tParsedChunks = HtmlChunkParser.parseSync(tContent);
+        }
+        
+        return (
+          normalizedContent: normalized,
+          imageUrls: urls,
+          chunks: parsedChunks,
+          translatedChunks: tParsedChunks,
+        );
+      });
+
+      normalizedContent = result.normalizedContent;
+      imageUrls = result.imageUrls;
+      chunks.value = result.chunks;
+      
+      if (hasTranslation) {
+        isTranslated.value = true;
+        translationContent.value = tContent;
+        if (result.translatedChunks.isNotEmpty) {
+          translatedChunks.value = result.translatedChunks;
+        }
+        showTranslation.value = true;
       }
-      showTranslation.value = true;
-    }
-
-    // 检查是否有摘要
-    if (SummaryService.hasSummary(article.entryId)) {
-      isSummarized.value = true;
-      summaryText.value = SummaryService.summaryFor(article.entryId) ?? '';
+      
+      if (SummaryService.hasSummary(entryId)) {
+        isSummarized.value = true;
+        summaryText.value = SummaryService.summaryFor(entryId) ?? '';
+      }
+    } finally {
+      isParsingContent.value = false;
     }
   }
 
@@ -486,6 +511,7 @@ class _ArticlePagerPageState extends State<_ArticlePagerPage> {
     final articles = widget.request.sequence!;
     return PageView.builder(
       controller: _pageController,
+      allowImplicitScrolling: true,
       itemCount: articles.length,
       onPageChanged: (index) {
         _currentIndex = index;
@@ -676,6 +702,33 @@ class _ArticlePageViewState extends State<ArticlePageView> {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: Obx(() {
+              if (controller.isParsingContent.value) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 64),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 24, height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: colorScheme.primary.withValues(alpha: 0.6)
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text('正在排版内容…',
+                              style: TextStyle(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
               final activeChunks = controller.showTranslation.value &&
                       controller.translatedChunks.isNotEmpty
                   ? controller.translatedChunks
