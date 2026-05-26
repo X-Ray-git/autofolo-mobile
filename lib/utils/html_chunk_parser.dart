@@ -71,8 +71,6 @@ abstract final class HtmlChunkParser {
 
   static const _headingTags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'};
 
-  static final _tableTagRe = RegExp(r'<table[>\s]', caseSensitive: false);
-  static final _divTagRe = RegExp(r'<div[>\s]', caseSensitive: false);
 
   static const _mediaTags = {
     'img', 'iframe', 'video', 'audio', 'table', 'pre', 'code',
@@ -135,19 +133,13 @@ abstract final class HtmlChunkParser {
   static List<HtmlChunk> _parseSync(String rawHtml) {
     final fragment = html_parser.parseFragment(rawHtml);
 
-    // 检测邮件 HTML：大量 table 但几乎无 div → 启用表格展平（最多只扫前 50000 字符即可判断）
-    final scopeHtml = rawHtml.length > 50000 ? rawHtml.substring(0, 50000) : rawHtml;
-    final tableCount = _tableTagRe.allMatches(scopeHtml).length;
-    final divCount = _divTagRe.allMatches(scopeHtml).length;
-    final isEmail = tableCount > 5 && tableCount > divCount * 2;
-
     final chunks = <HtmlChunk>[];
-    _processMixedNodes(fragment.nodes, chunks, isEmail);
+    _processMixedNodes(fragment.nodes, chunks);
 
     return _mergeAdjacentParagraphs(chunks);
   }
 
-  static void _processMixedNodes(Iterable<dom.Node> nodes, List<HtmlChunk> chunks, bool isEmail) {
+  static void _processMixedNodes(Iterable<dom.Node> nodes, List<HtmlChunk> chunks) {
     final buffer = StringBuffer();
     void flush() {
       final text = buffer.toString().trim();
@@ -176,7 +168,7 @@ abstract final class HtmlChunkParser {
                             tag == 'pre' || tag == 'code';
         if (_mediaTags.contains(tag) || isBlockLike || _hasMediaDescendant(child)) {
           flush();
-          _processElement(child, chunks, isEmail: isEmail);
+          _processElement(child, chunks);
         } else {
           buffer.write(child.outerHtml);
         }
@@ -187,8 +179,7 @@ abstract final class HtmlChunkParser {
     flush();
   }
 
-  static void _processElement(dom.Element element, List<HtmlChunk> chunks,
-      {bool isEmail = false}) {
+  static void _processElement(dom.Element element, List<HtmlChunk> chunks) {
     final tag = element.localName?.toLowerCase() ?? '';
 
     // 标题 — BUGFIX: 有媒体子节点时保留标题文本+单独发媒体块，空标题跳过
@@ -275,25 +266,8 @@ abstract final class HtmlChunkParser {
       return;
     }
 
-    // 表格 — 邮件模式下展平，递归提取内部内容
+    // 表格 — 保持原生结构，交给前端渲染
     if (tag == 'table') {
-      if (isEmail) {
-        // 邮件布局 table → 递归提取 p/img/h1-h6，丢弃表格骨架
-        final childChunks = <HtmlChunk>[];
-        for (final child in element.nodes) {
-          if (child is dom.Element) {
-            _processElement(child, childChunks, isEmail: true);
-          } else if (child is dom.Text) {
-            final text = child.text.trim();
-            if (text.isNotEmpty) {
-              childChunks.add(
-                  HtmlChunk(type: HtmlChunkType.paragraph, content: text));
-            }
-          }
-        }
-        chunks.addAll(childChunks);
-        return;
-      }
       chunks.add(HtmlChunk(
         type: HtmlChunkType.table,
         content: element.outerHtml,
@@ -305,7 +279,7 @@ abstract final class HtmlChunkParser {
     if (tag == 'ul' || tag == 'ol') {
       final items = element
           .querySelectorAll('li')
-          .map((li) => li.text.trim())
+          .map((li) => li.innerHtml.trim())
           .where((t) => t.isNotEmpty)
           .toList();
       if (items.isNotEmpty) {
@@ -330,7 +304,7 @@ abstract final class HtmlChunkParser {
 
     // 容器标签 → 强制递归处理子节点，避免巨大富文本
     if (_containerTags.contains(tag)) {
-      _processMixedNodes(element.nodes, chunks, isEmail);
+      _processMixedNodes(element.nodes, chunks);
       return;
     }
 
@@ -343,7 +317,7 @@ abstract final class HtmlChunkParser {
         }
         return;
       }
-      _processMixedNodes(element.nodes, chunks, isEmail);
+      _processMixedNodes(element.nodes, chunks);
       return;
     }
 
@@ -353,7 +327,7 @@ abstract final class HtmlChunkParser {
       final nonCaptionNodes = element.nodes.where((n) => 
         !(n is dom.Element && n.localName?.toLowerCase() == 'figcaption')
       );
-      _processMixedNodes(nonCaptionNodes, childChunks, isEmail);
+      _processMixedNodes(nonCaptionNodes, childChunks);
       
       final caption = element.querySelector('figcaption');
       if (caption != null) {
@@ -374,7 +348,7 @@ abstract final class HtmlChunkParser {
       }
       return;
     }
-    _processMixedNodes(element.nodes, chunks, isEmail);
+    _processMixedNodes(element.nodes, chunks);
   }
 
   static String _extractSrc(dom.Element element) {

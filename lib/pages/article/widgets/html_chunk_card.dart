@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter_html_table/flutter_html_table.dart';
 
 import '../../../utils/article_content_utils.dart';
 import '../../../utils/html_chunk_parser.dart';
@@ -191,7 +192,7 @@ class HtmlChunkCard extends StatelessWidget {
           ),
           'a': Style(color: cs.primary),
         },
-        extensions: [_imageExtension(context)],
+        extensions: [_imageExtension(context), TableHtmlExtension()],
       ),
     );
   }
@@ -219,7 +220,7 @@ class HtmlChunkCard extends StatelessWidget {
             padding: HtmlPaddings.symmetric(horizontal: 10, vertical: 8),
           ),
         },
-        extensions: [_imageExtension(context)],
+        extensions: [_imageExtension(context), TableHtmlExtension()],
       ),
     );
   }
@@ -253,13 +254,28 @@ class HtmlChunkCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    item,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: cs.onSurface,
-                      height: 1.5,
-                    ),
+                  child: Html(
+                    data: Theme.of(context).brightness == Brightness.dark
+                        ? HtmlContrastUtils.adjustHtmlContrast(item, cs.surface)
+                        : item,
+                    style: {
+                      'body': Style(
+                        fontSize: FontSize(16),
+                        lineHeight: const LineHeight(1.5),
+                        color: cs.onSurface,
+                        margin: Margins.zero,
+                        padding: HtmlPaddings.zero,
+                      ),
+                      'a': Style(color: cs.primary),
+                      'strong': Style(fontWeight: FontWeight.w700),
+                      'em': Style(fontStyle: FontStyle.italic),
+                      'code': Style(
+                        backgroundColor: cs.surfaceContainerHighest,
+                        fontFamily: 'monospace',
+                        fontSize: FontSize(14),
+                      ),
+                    },
+                    extensions: [_imageExtension(context), TableHtmlExtension()],
                   ),
                 ),
               ],
@@ -449,14 +465,13 @@ class HtmlChunkCard extends StatelessWidget {
         ),
         'a': Style(color: cs.primary),
       },
-      extensions: [_imageExtension(context)],
+      extensions: [_imageExtension(context), TableHtmlExtension()],
     );
   }
 
   /// 共享的图片渲染扩展：使用 CachedNetworkImage + 统一请求头 + 点击放大
   ImageExtension _imageExtension(BuildContext context) {
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final cacheWidth = (maxWidth * dpr).round();
 
     return ImageExtension(
       builder: (extensionContext) {
@@ -466,6 +481,27 @@ class HtmlChunkCard extends StatelessWidget {
         if (imageUrl == null) {
           return const SizedBox.shrink();
         }
+
+        final attrs = extensionContext.attributes;
+        double? explicitWidth;
+        double? explicitHeight;
+
+        if (attrs['width'] != null) {
+          explicitWidth = double.tryParse(attrs['width']!.replaceAll(RegExp(r'[^0-9.]'), ''));
+        }
+        if (attrs['height'] != null) {
+          explicitHeight = double.tryParse(attrs['height']!.replaceAll(RegExp(r'[^0-9.]'), ''));
+        }
+
+        // 针对常见的 WordPress emoji 等内联小图做默认尺寸约束
+        if (imageUrl.contains('s.w.org/images/core/emoji') || attrs['class'] == 'emoji') {
+          explicitWidth ??= 20.0;
+          explicitHeight ??= 20.0;
+        }
+
+        final renderWidth = explicitWidth ?? maxWidth;
+        final cacheWidth = (renderWidth * dpr).round();
+
         return ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: CachedNetworkImage(
@@ -473,33 +509,36 @@ class HtmlChunkCard extends StatelessWidget {
             cacheKey: 'v2_$imageUrl',
             httpHeaders: ArticleImageService.httpHeaders,
             fit: BoxFit.contain,
-            width: maxWidth,
+            width: explicitWidth,
+            height: explicitHeight,
             memCacheWidth: cacheWidth,
             maxWidthDiskCache: cacheWidth * 2,
             fadeInDuration: const Duration(milliseconds: 80),
             fadeOutDuration: const Duration(milliseconds: 80),
             placeholder: (context, url) => Container(
-              height: 180,
+              width: explicitWidth ?? 60,
+              height: explicitHeight ?? (explicitWidth != null ? explicitWidth : 60),
               color: Theme.of(context)
                   .colorScheme
                   .surfaceContainerHighest
                   .withValues(alpha: 0.35),
               child: const Center(
                 child: SizedBox(
-                  width: 24,
-                  height: 24,
+                  width: 16,
+                  height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             ),
             errorWidget: (context, url, error) => Container(
-              height: 120,
+              width: explicitWidth ?? 60,
+              height: explicitHeight ?? (explicitWidth != null ? explicitWidth : 60),
               color: Theme.of(context)
                   .colorScheme
                   .surfaceContainerHighest
                   .withValues(alpha: 0.2),
               child: const Center(
-                child: Icon(Icons.broken_image_outlined, size: 36),
+                child: Icon(Icons.broken_image_outlined, size: 20),
               ),
             ),
             imageBuilder: (context, imageProvider) {

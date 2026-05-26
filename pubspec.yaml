@@ -35,6 +35,7 @@ dependencies:
 
   # HTML 渲染
   flutter_html: ^3.0.0-beta.2
+  flutter_html_table: ^3.0.0-beta.2
   html: ^0.15.4
 
   # 时间格式化

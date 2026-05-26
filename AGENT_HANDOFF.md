@@ -1875,3 +1875,25 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 当前代码将远古拉取的 Bug 修复为了单次请求：`FeedHttp.getEntries(limit: 200)`。
 - **隐患分析**：如果 API 的强制最大限制是 50（标准 REST 防护），或用户2天内阅读超过 200 篇，超出的文章将永远丢失。此外，单次请求 `limit: 200` 且携带 `withContent: true` 极易导致弱网超时。
 - **安全方案思路**：放弃单次拉取，实现严格的 `while` 循环分页。每次请求 `limit: 50`，获取数据后检查 `batch.last.publishedAt`。若最旧文章的时间尚未越过窗口底线（2天前），则将 `cursor` 设为 `batch.last.publishedAt` 继续请求下一页。直到 `batch.last.publishedAt < windowStart` 时安全退出循环。
+
+## 54. 恢复消失的表格与通用图文排版重构（2026-05-26）
+
+### 54.1 修复背景与现象
+用户发现部分 RSS 源（如“小众软件”）文章内的表格完全消失，以及部分图片（尤其是 emoji）在表格中被放大多倍，导致整个版面被撑爆。
+
+### 54.2 诊断过程与核心思路
+1. **数据与解析层核实**：通过拦截并测试 API 响应，发现带有 `<table>` 的 HTML 节点在获取和切分时是完整的。真正的原因是 `flutter_html` 从 3.0.0 版本开始剥离了原生表格支持，将其独立到了 `flutter_html_table`。项目中没有注册相关的 `TableHtmlExtension`，导致所有 `<table ...>` 被静默丢弃。
+2. **“双重邮件展平”的发现与废弃**：
+   - 根据 AGENT_HANDOFF 的历史记录（52.1 节），`ArticleContentUtils._flattenLayoutTables` 已经非常完美地剥离了没有 `<th>` 的邮件布局空壳，为 LLM 节省了约 30% 体积，这套安全机制被保留。
+   - 但在 `HtmlChunkParser` 中，还有一套危险的基于启发式正则（`tableCount > 5` 等）的 `isEmail` 检测，强行将剩余的真实数据表打散拼装成 `<p><tr>...</tr></p>`。这破坏了所有正常的有表头数据表。这套画蛇添足的逻辑已被彻底移除。
+3. **列表内富文本恢复**：原 `HtmlChunkParser` 处理 `ul/ol` 时使用 `li.text.trim()` 粗暴提取纯文本，丢失了加粗、链接、内部图片。现改为 `li.innerHtml.trim()` 并在 UI 渲染层利用 `Html()` 进行解析。
+4. **底层图文自适应约束（大图缩小，小图精致）**：
+   - 原 `_imageExtension` 中，所有渲染内的嵌图被强行绑定了 `width: maxWidth`。这导致了即使是原本只有十几像素的内联徽章或 emoji，也被强行拉伸填满整个屏幕，从而撑毁表格。
+   - **重构机制**：现在会自动解析 `extensionContext.attributes` 的 `width` 和 `height`。当没有显式尺寸约束时，解除 `maxWidth` 强制限制，让 `CachedNetworkImage` 自主决定。并增加了针对常见 WordPress Emojis（如 `s.w.org/images/core/emoji`）的 `20x20` 特殊兜底逻辑。
+
+### 54.3 变更细节
+- **依赖变更**：引入 `flutter_html_table: ^3.0.0-beta.2`。
+- **解析层**：删除了 `html_chunk_parser.dart` 中与 `isEmail` 有关的所有逻辑以及不再使用的正则缓存变量。更新了列表的提取方式。
+- **渲染层**：为所有基于 `Html()` 渲染的组件插入 `TableHtmlExtension()`。重构 `_imageExtension`，使其兼容超大风景图及内联小图标的智能自适应尺寸。
+
+**结论**：本次修改不仅找回了表格，还使 App 全局掌握了渲染极其复杂图文嵌套（如引用内带视频、列表内带图片链接、表格内带小微标）的能力。
