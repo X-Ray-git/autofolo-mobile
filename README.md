@@ -1,6 +1,6 @@
 # autofolo — Folo RSS 信息流 Android 阅读器
 
-基于 Flutter 的 Folo RSS 聚合阅读客户端，对标 PiliPlus 工程成熟度，仅支持 Android。
+基于 Flutter 的 Folo RSS 聚合阅读客户端，致力于提供丝滑、原生的专属信息流体验，仅支持 Android。
 
 ## 功能矩阵
 
