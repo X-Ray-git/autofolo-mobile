@@ -148,12 +148,13 @@ class FeedHttp {
 
     for (final inbox in inboxes) {
       final source = FeedModel.fromInboxJson(inbox);
-      final inboxId = inbox['id'] as String?;
-      if (inboxId == null || inboxId.isEmpty) continue;
+      final inboxId = source.feedId;
+      if (inboxId.isEmpty) continue;
 
       final result = await getInboxEntries(
         inboxId: inboxId,
         limit: limit,
+        withContent: withContent,
         inboxTitle: source.title,
         inboxImage: source.image,
         inboxCategory: source.category,
@@ -200,6 +201,7 @@ class FeedHttp {
   static Future<LoadingState<List<ArticleModel>>> getInboxEntries({
     required String inboxId,
     int limit = AppConstants.defaultPageSize,
+    bool withContent = false,
     String? inboxTitle,
     String? inboxImage,
     String? inboxCategory,
@@ -209,6 +211,7 @@ class FeedHttp {
         'inboxId': inboxId,
         'read': false,
         'limit': limit,
+        'withContent': withContent,
       };
 
       final response = await Request().post(

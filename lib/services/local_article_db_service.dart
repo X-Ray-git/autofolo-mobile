@@ -159,6 +159,23 @@ abstract final class LocalArticleDbService {
     if (keys.length <= _maxArticles) return;
 
     final sorted = readAllArticles();
+    
+    // 按优先级排序以决定保留哪些文章
+    // 优先级 1: 所有未读文章 (在 5000 限制内优先保留未读，避免重复拉取)
+    // 优先级 0: 已读文章
+    sorted.sort((a, b) {
+      int score(ArticleModel m) {
+        if (!m.isRead) return 1;
+        return 0;
+      }
+      
+      final sa = score(a);
+      final sb = score(b);
+      if (sa != sb) return sb.compareTo(sa); // 优先级高的排在前面
+      
+      return _compareArticleByTimeDesc(a, b); // 优先级相同则按时间倒序
+    });
+    
     final keepIds = sorted.take(_maxArticles).map((e) => e.entryId).toSet();
     
     final toDelete = <String>[];
