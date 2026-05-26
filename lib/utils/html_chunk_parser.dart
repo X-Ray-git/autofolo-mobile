@@ -89,8 +89,8 @@ abstract final class HtmlChunkParser {
     return false;
   }
 
-  /// 从包含媒体的标题中提取纯文本（跳过媒体节点）
-  static String _headingTextOnly(dom.Element element) {
+  /// 从包含媒体的标题中提取HTML（跳过媒体节点，保留行内标签）
+  static String _headingHtmlOnly(dom.Element element) {
     final buffer = StringBuffer();
     for (final node in element.nodes) {
       if (node is dom.Text) {
@@ -99,10 +99,10 @@ abstract final class HtmlChunkParser {
         final tag = node.localName?.toLowerCase() ?? '';
         if (_mediaTags.contains(tag)) continue;
         if (_hasMediaDescendant(node)) continue;
-        buffer.write(' ${node.text} ');
+        buffer.write(node.outerHtml);
       }
     }
-    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return buffer.toString().trim();
   }
 
   /// 只发媒体子节点（文本已在标题中捕获）
@@ -186,22 +186,22 @@ abstract final class HtmlChunkParser {
     if (_headingTags.contains(tag)) {
       final level = int.tryParse(tag.substring(1)) ?? 1;
       if (_hasMediaDescendant(element)) {
-        final text = _headingTextOnly(element);
-        if (text.isNotEmpty) {
+        final htmlContent = _headingHtmlOnly(element);
+        if (htmlContent.isNotEmpty) {
           chunks.add(HtmlChunk(
             type: HtmlChunkType.heading,
-            content: text,
+            content: htmlContent,
             headingLevel: level,
           ));
         }
         _emitMediaChildren(element, chunks);
         return;
       }
-      final text = element.text.replaceAll(RegExp(r'\s+'), ' ').trim();
-      if (text.isEmpty) return; // skip empty spacers like <h3><span><br></span></h3>
+      if (element.text.trim().isEmpty) return; // skip empty spacers like <h3><span><br></span></h3>
+      final htmlContent = element.innerHtml.trim();
       chunks.add(HtmlChunk(
         type: HtmlChunkType.heading,
-        content: text,
+        content: htmlContent,
         headingLevel: level,
       ));
       return;

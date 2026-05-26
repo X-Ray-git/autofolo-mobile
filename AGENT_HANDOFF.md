@@ -1897,3 +1897,29 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 - **渲染层**：为所有基于 `Html()` 渲染的组件插入 `TableHtmlExtension()`。重构 `_imageExtension`，使其兼容超大风景图及内联小图标的智能自适应尺寸。
 
 **结论**：本次修改不仅找回了表格，还使 App 全局掌握了渲染极其复杂图文嵌套（如引用内带视频、列表内带图片链接、表格内带小微标）的能力。
+
+## 55. 修复 HTML 块内链接无法点击的问题（2026-05-26）
+
+### 55.1 问题背景
+
+用户反馈在文章详情页中，如果链接 (`<a>` 标签) 存在于标题 (`<h1>`-`<h6>`)、段落 (`<p>`)、列表 (`<li>`)、引用块 (`<blockquote>`)、表格 (`<table>`) 等 HTML 块内部，点击这些链接没有任何反应。
+
+### 55.2 根因分析
+
+1. **纯文本剥离**：在 `HtmlChunkParser` 解析标题、列表等区块时，原本的逻辑错误地剥离了部分内联 HTML 标签（包括 `<a>`），导致渲染层拿到的可能只是纯文本。
+2. **缺失链接处理**：在 `HtmlChunkCard` 渲染层中，对于这些元素的渲染，原先部分采用了 `Text` 控件，或者即使采用了 `Html` 控件也没有配置 `onLinkTap` 回调事件，因此用户无法触发外部链接的点击跳转。
+
+### 55.3 修复方案
+
+1. **Parser 层保留内联标签**：
+   - 将 `_headingTextOnly` 重命名为 `_headingHtmlOnly`。
+   - 在跳过图片等媒体子节点时，使用 `node.outerHtml` 和 `element.innerHtml` 获取内容，从而在生成的 `HtmlChunk` 中完整保留了 `<a>` 等内联 HTML 标签。
+2. **Renderer 层增加点击事件与样式**：
+   - 提取出公共的 `_handleLinkTap` 函数，使用 `url_launcher` 通过外部浏览器 (`LaunchMode.externalApplication`) 打开点击的链接。
+   - 为所有涉及图文排版的区块（标题、段落、列表、表格、引用块及原始 HTML 区块）统一应用 `Html` 控件，并配置 `onLinkTap: _handleLinkTap`。
+   - 对于深色模式下使用 `Html` 渲染的情况，统一先通过 `HtmlContrastUtils.adjustHtmlContrast` 调整整体 HTML 字符串的对比度。同时在 `Html` 的 `Style` 中为 `<a>` 标签配置主题色，确保所有区域的链接颜色一致且不突兀。
+
+### 55.4 影响文件
+
+- `lib/utils/html_chunk_parser.dart`
+- `lib/pages/article/widgets/html_chunk_card.dart`
