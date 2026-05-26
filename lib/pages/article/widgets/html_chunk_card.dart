@@ -70,6 +70,15 @@ class HtmlChunkCard extends StatelessWidget {
     };
   }
 
+  Future<void> _handleLinkTap(String? url, Map<String, String> attributes, dynamic element) async {
+    if (url != null && url.isNotEmpty) {
+      final uri = Uri.tryParse(url);
+      if (uri != null && await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
+  }
+
   // ── 标题 ──
 
   Widget _buildHeading(BuildContext context, ColorScheme cs) {
@@ -80,14 +89,24 @@ class HtmlChunkCard extends StatelessWidget {
       4 => 16.0,
       _ => 15.0,
     };
-    return Text(
-      chunk.content,
-      style: TextStyle(
-        fontSize: fontSize,
-        fontWeight: FontWeight.bold,
-        color: cs.onSurface,
-        height: 1.35,
-      ),
+    String htmlData = chunk.content;
+    if (Theme.of(context).brightness == Brightness.dark) {
+      htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
+    }
+    return Html(
+      data: htmlData,
+      onLinkTap: _handleLinkTap,
+      style: {
+        'body': Style(
+          fontSize: FontSize(fontSize),
+          fontWeight: FontWeight.bold,
+          color: cs.onSurface,
+          lineHeight: const LineHeight(1.35),
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+        ),
+        'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
+      },
     );
   }
 
@@ -100,6 +119,7 @@ class HtmlChunkCard extends StatelessWidget {
     }
     return Html(
       data: htmlData,
+      onLinkTap: _handleLinkTap,
       style: {
         'p': Style(
           fontSize: FontSize(16),
@@ -180,6 +200,7 @@ class HtmlChunkCard extends StatelessWidget {
         data: Theme.of(context).brightness == Brightness.dark
             ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
             : chunk.content,
+        onLinkTap: _handleLinkTap,
         style: {
           'body': Style(
             fontSize: FontSize(15),
@@ -205,6 +226,7 @@ class HtmlChunkCard extends StatelessWidget {
         data: Theme.of(context).brightness == Brightness.dark
             ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
             : chunk.content,
+        onLinkTap: _handleLinkTap,
         style: {
           'table': Style(
             border: Border.all(color: cs.outlineVariant),
@@ -235,6 +257,12 @@ class HtmlChunkCard extends StatelessWidget {
         children: chunk.listItems.asMap().entries.map((entry) {
           final i = entry.key;
           final item = entry.value;
+
+          String htmlData = item;
+          if (Theme.of(context).brightness == Brightness.dark) {
+            htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
+          }
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(
@@ -253,13 +281,19 @@ class HtmlChunkCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    item,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: cs.onSurface,
-                      height: 1.5,
-                    ),
+                  child: Html(
+                    data: htmlData,
+                    onLinkTap: _handleLinkTap,
+                    style: {
+                      'body': Style(
+                        fontSize: FontSize(16),
+                        color: cs.onSurface,
+                        lineHeight: const LineHeight(1.5),
+                        margin: Margins.zero,
+                        padding: HtmlPaddings.zero,
+                      ),
+                      'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
+                    },
                   ),
                 ),
               ],
@@ -439,6 +473,7 @@ class HtmlChunkCard extends StatelessWidget {
       data: Theme.of(context).brightness == Brightness.dark
           ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
           : chunk.content,
+      onLinkTap: _handleLinkTap,
       style: {
         'body': Style(
           fontSize: FontSize(16),

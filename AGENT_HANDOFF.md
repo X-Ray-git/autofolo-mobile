@@ -1875,3 +1875,29 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 当前代码将远古拉取的 Bug 修复为了单次请求：`FeedHttp.getEntries(limit: 200)`。
 - **隐患分析**：如果 API 的强制最大限制是 50（标准 REST 防护），或用户2天内阅读超过 200 篇，超出的文章将永远丢失。此外，单次请求 `limit: 200` 且携带 `withContent: true` 极易导致弱网超时。
 - **安全方案思路**：放弃单次拉取，实现严格的 `while` 循环分页。每次请求 `limit: 50`，获取数据后检查 `batch.last.publishedAt`。若最旧文章的时间尚未越过窗口底线（2天前），则将 `cursor` 设为 `batch.last.publishedAt` 继续请求下一页。直到 `batch.last.publishedAt < windowStart` 时安全退出循环。
+
+## 54. 修复 HTML 块内链接无法点击的问题（2026-05-26）
+
+### 54.1 问题背景
+
+用户反馈在文章详情页中，如果链接 (`<a>` 标签) 存在于标题 (`<h1>`-`<h6>`)、段落 (`<p>`)、列表 (`<li>`)、引用块 (`<blockquote>`)、表格 (`<table>`) 等 HTML 块内部，点击这些链接没有任何反应。
+
+### 54.2 根因分析
+
+1. **纯文本剥离**：在 `HtmlChunkParser` 解析标题、列表等区块时，原本的逻辑错误地剥离了部分内联 HTML 标签（包括 `<a>`），导致渲染层拿到的可能只是纯文本。
+2. **缺失链接处理**：在 `HtmlChunkCard` 渲染层中，对于这些元素的渲染，原先部分采用了 `Text` 控件，或者即使采用了 `Html` 控件也没有配置 `onLinkTap` 回调事件，因此用户无法触发外部链接的点击跳转。
+
+### 54.3 修复方案
+
+1. **Parser 层保留内联标签**：
+   - 将 `_headingTextOnly` 重命名为 `_headingHtmlOnly`。
+   - 在跳过图片等媒体子节点时，使用 `node.outerHtml` 和 `element.innerHtml` 获取内容，从而在生成的 `HtmlChunk` 中完整保留了 `<a>` 等内联 HTML 标签。
+2. **Renderer 层增加点击事件与样式**：
+   - 提取出公共的 `_handleLinkTap` 函数，使用 `url_launcher` 通过外部浏览器 (`LaunchMode.externalApplication`) 打开点击的链接。
+   - 为所有涉及图文排版的区块（标题、段落、列表、表格、引用块及原始 HTML 区块）统一应用 `Html` 控件，并配置 `onLinkTap: _handleLinkTap`。
+   - 对于深色模式下使用 `Html` 渲染的情况，统一先通过 `HtmlContrastUtils.adjustHtmlContrast` 调整整体 HTML 字符串的对比度。同时在 `Html` 的 `Style` 中为 `<a>` 标签配置主题色，确保所有区域的链接颜色一致且不突兀。
+
+### 54.4 影响文件
+
+- `lib/utils/html_chunk_parser.dart`
+- `lib/pages/article/widgets/html_chunk_card.dart`
