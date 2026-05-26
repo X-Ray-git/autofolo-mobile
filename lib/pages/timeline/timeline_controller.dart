@@ -42,6 +42,15 @@ class TimelineController extends GetxController {
   void onInit() {
     super.onInit();
     ever(allArticles, (_) => _updateAppBadge());
+    
+    // 监听全局文章状态变更，精准更新内存数据，保持 UI 同步（如 AI 过滤拦截数）
+    ever(ArticleStateNotifier.version, (_) {
+      final entryId = ArticleStateNotifier.lastEntryId;
+      if (entryId != null) {
+        _syncSingleArticleFromDb(entryId);
+      }
+    });
+
     loadFeedsThenArticles();
   }
 
@@ -408,6 +417,44 @@ class TimelineController extends GetxController {
       if (a.isRejectedByAi && !a.isRead) count++;
     }
     filterCount.value = count;
+  }
+
+  void _syncSingleArticleFromDb(String entryId) {
+    final idx = allArticles.indexWhere((a) => a.entryId == entryId);
+    if (idx < 0) return;
+
+    final raw = GStorage.articleDb.get(entryId);
+    if (raw is! Map) return;
+
+    final updatedFromDb = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
+    
+    // 保护可能尚未同步到 DB 的本地“已读”状态
+    final localOverride = GStorage.readStatus.get(entryId);
+    final mergedRead = localOverride == true ? true : updatedFromDb.isRead;
+    
+    final finalUpdated = ArticleModel(
+      entryId: updatedFromDb.entryId,
+      feedId: updatedFromDb.feedId,
+      feedTitle: updatedFromDb.feedTitle,
+      feedImage: updatedFromDb.feedImage,
+      title: updatedFromDb.title,
+      url: updatedFromDb.url,
+      content: updatedFromDb.content,
+      publishedAt: updatedFromDb.publishedAt,
+      isRead: mergedRead,
+      category: updatedFromDb.category,
+      subscriptionCategory: updatedFromDb.subscriptionCategory,
+      author: updatedFromDb.author,
+      imageUrl: updatedFromDb.imageUrl,
+      isRejectedByAi: updatedFromDb.isRejectedByAi,
+      filterReason: updatedFromDb.filterReason,
+      filterReviewed: updatedFromDb.filterReviewed,
+    );
+
+    allArticles[idx] = finalUpdated;
+    allArticles.refresh();
+    _applyFilter();
+    _updateFilterCount();
   }
 
   void _updateReadStateInMemory(String entryId, bool isRead) {

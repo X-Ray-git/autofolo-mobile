@@ -1952,3 +1952,26 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 | 文章加载与滑动 | UI 线程同步解析 HTML，易掉帧 | 后台 Isolate 异步解析，UI 线程无阻滞 |
 | 解析期间展示 | 无，主线程卡住或直接显示内容 | 显示优雅的加载动画（正在排版内容…） |
 | PageView 预渲染 | 未启用隐式缓存，滑动时才触发构建 | 开启隐式滚动，邻近页面提前触发 Isolate 解析与渲染 |
+
+---
+
+## 57. 解决全局状态变更导致的时间线 UI 失步问题（2026-05-26）
+
+### 57.1 问题背景
+
+在之前的架构中，当单篇文章的状态在全局被更新时（例如：AI 自动过滤 Worker 判定该文章为被拦截 `isRejectedByAi: true`，或用户在其他视图中改变了文章的已读未读状态等），如果用户不触发 `TimelineController.loadData()` 下拉刷新，`TimelineController` 内存中的 `allArticles` 列表将不会感知该变化。
+这会导致时间线列表卡片的 UI 呈现，以及顶部的“AI智能过滤拦截数”等聚合 UI 组件出现数据脏读或失步。
+
+### 57.2 增量同步机制设计（单点精确刷新）
+
+在 `TimelineController.onInit` 中，借助已有的 `ArticleStateNotifier` 注册全局监听器。
+当发生状态更新时，通过新增的 `_syncSingleArticleFromDb(entryId)` 实现了精确增量更新，而不需要重新进行昂贵的全列表 `_applyFilter` 和 `loadData`（除非该变更引起了列表本身的分类流转）：
+
+1. **精确点查**：在 O(N) 找到当前时间线 `allArticles` 列表中的目标文章。如果不在此视图内则直接跳过，零开销。
+2. **读库映射**：从 Hive (`GStorage.articleDb`) 读取最新的底层统一数据包，并转换回 `ArticleModel`。
+3. **保护本地重写覆盖**：引入本地内存未读防闪烁机制，将从库里读到的新数据与 `GStorage.readStatus` 中的临时锁定（`true`）安全合并，防止同步瞬间的已读闪烁（收口机制与 §53 保持一致）。
+4. **驱动响应系统**：直接替换 `allArticles[idx]`，触发 `.refresh()`，并随后调用 `_applyFilter()` 与 `_updateFilterCount()` 准确驱动“拦截器拦截数”和时间线分片的精确响应重绘。
+
+### 57.3 影响文件
+
+- `lib/pages/timeline/timeline_controller.dart`
