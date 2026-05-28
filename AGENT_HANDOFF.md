@@ -2023,10 +2023,16 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
    - 关键优化：使用 `<br><br>` 而不是 `\n\n` 进行拼接。这不仅大幅减少了 Flutter 组件树的层级数量（从几百个 Widget 降维到十几个），还完美保留了 `flutter_html` 解析时的物理段落间距。
 3. **列表不拆分**：遇到 `<ul>` 和 `<ol>`，不再暴力切分成独立 chunk，而是整块保留 HTML 提交渲染。
 
-### 59.3 视觉防抖优化 (Layout Shift 保护)
+### 59.3 终极补丁：渐进式分帧注入 (Incremental Rendering)
+虽然通过打包极大地减少了 Widget 数量，但在遇到包含数十个巨型区块的万字长文时，`Column` 的初次布局依然会导致打开文章或横向滑动切页时出现微小的掉帧（Jitter）。
+为此，我们在 `ArticlePage` 中引入了 `_renderIncrementally` 渐进式注入机制：
+- **首屏秒开**：瞬间只将前 3 个 Chunk 注入渲染队列，保证绝对顺滑无感。
+- **后台逐帧补齐**：剩余的 Chunk 每隔一帧（16ms）向 `Column` 底部追加一个。结合给 `HtmlChunkCard` 绑定的独立 `ValueKey`，底层 Flutter 引擎会自动跳过已渲染块的重绘（Rebuild），实现了无掉帧的丝滑加载。
+
+### 59.4 视觉防抖优化 (Layout Shift 保护)
 在 `HtmlChunkCard` 中，对于未知真实尺寸的网络图片，取消了原本硬编码的 `100.0` 兜底高度，改为动态计算的 `widget.maxWidth * 0.6` 作为占位符。由于大部分插图都是横屏比例，这个占位极大地减少了真实图片加载瞬间引发的版面跳动。
 
-### 59.4 影响文件
+### 59.5 影响文件
 - `lib/pages/article/article_page.dart`
 - `lib/utils/html_chunk_parser.dart`
 - `lib/pages/article/widgets/html_chunk_card.dart`
