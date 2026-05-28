@@ -25,6 +25,7 @@
 - 图片加载过 Folo 代理：`ArticleImageService.toProxiedUrl()`
 - 邮件 HTML 检测：`tableCount > 5 && tableCount > divCount * 2`
 - `LlmConfig` 三组独立：翻译(flash/T0.2/128K) 摘要(pro/think/T0.2/2K) 过滤(pro/T0.1/2K)
+- **安全与隐私**：临时测试脚本、抓取的真实 JSON/HTML 数据等，请务必放在 `scratch/` 目录下（该目录包含一个 `.gitkeep` 占位符）。该目录已被 `.gitignore` 忽略，以防止含有真实 Token 或用户订阅数据的隐私信息被意外提交至版本库。
 
 ## 1. 用户要求（原始上下文）
 
@@ -2008,11 +2009,36 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 
 ---
 
-## 59. 未来功能规划 (Future Features)
+## 59. 极致渲染优化：完美进度条与流畅加载的平衡 (2026-05-28)
+
+### 59.1 背景与痛点
+在之前的架构中，为了防止多图超长文导致的初次渲染内存峰值与主线程卡顿，我们在 `ArticlePage` 引入了 `SliverList` 懒加载策略。
+但这引入了一个致命副作用：**阅读进度条失效/乱跳**。由于 Flutter `SliverList` 无法预知未渲染子组件的高度，导致 `ScrollController.position.maxScrollExtent` 在滑动过程中不断动态增加，使得顶部进度条永远算不准，也无法平滑到达 100%。
+
+### 59.2 核心策略：回归 Column + 大颗粒度打包
+为了在找回“绝对精确进度条”的同时避免初次渲染卡顿，我们采取了“降维打包”策略：
+1. **废弃 SliverList**：在 `ArticlePage` 中彻底移除懒加载机制，将文章所有区块通过 `Column` 一次性构建。
+2. **底层合并短段落 (HtmlChunkParser)**：
+   - 将相邻的细碎纯文本 `<p>` 节点直接拼接（上限放宽至 2000 字符）。
+   - 关键优化：使用 `<br><br>` 而不是 `\n\n` 进行拼接。这不仅大幅减少了 Flutter 组件树的层级数量（从几百个 Widget 降维到十几个），还完美保留了 `flutter_html` 解析时的物理段落间距。
+3. **列表不拆分**：遇到 `<ul>` 和 `<ol>`，不再暴力切分成独立 chunk，而是整块保留 HTML 提交渲染。
+
+### 59.3 视觉防抖优化 (Layout Shift 保护)
+在 `HtmlChunkCard` 中，对于未知真实尺寸的网络图片，取消了原本硬编码的 `100.0` 兜底高度，改为动态计算的 `widget.maxWidth * 0.6` 作为占位符。由于大部分插图都是横屏比例，这个占位极大地减少了真实图片加载瞬间引发的版面跳动。
+
+### 59.4 影响文件
+- `lib/pages/article/article_page.dart`
+- `lib/utils/html_chunk_parser.dart`
+- `lib/pages/article/widgets/html_chunk_card.dart`
+- `lib/pages/settings/settings_page.dart` (删除了多余的懒加载设置项)
+
+---
+
+## 60. 未来功能规划 (Future Features)
 
 本文档记录了目前暂未实现，但在未来迭代中计划加入的改进项。
 
-### 59.1 后台静默刷新通知角标 (Background Badge Sync)
+### 60.1 后台静默刷新通知角标 (Background Badge Sync)
 - **背景**：目前应用在“退后台（挂起）”状态或处于前台时，可以实时更新桌面图标的未读角标（红点或数字）。但如果应用被系统完全杀掉，即使服务器端有了新文章，桌面角标也无法自动更新，必须等到用户下次打开应用。
 - **目标**：实现应用在完全关闭状态下，桌面角标依然能随服务器未读文章数量变化而更新。
 - **技术选型方向**：
