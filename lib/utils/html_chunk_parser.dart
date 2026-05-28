@@ -277,19 +277,10 @@ abstract final class HtmlChunkParser {
 
     // 列表
     if (tag == 'ul' || tag == 'ol') {
-      final items = element
-          .querySelectorAll('li')
-          .map((li) => li.innerHtml.trim())
-          .where((t) => t.isNotEmpty)
-          .toList();
-      if (items.isNotEmpty) {
-        chunks.add(HtmlChunk(
-          type: HtmlChunkType.list,
-          content: '',
-          listItems: items,
-          attributes: {'ordered': (tag == 'ol').toString()},
-        ));
-      }
+      chunks.add(HtmlChunk(
+        type: HtmlChunkType.list,
+        content: element.outerHtml,
+      ));
       return;
     }
 
@@ -414,6 +405,9 @@ abstract final class HtmlChunkParser {
   }
 
   /// 合并相邻的纯文本 paragraph，减少 widget 数量
+  /// 注：这里移除了强制拼接大量文本的逻辑，因为如果一次性拼接过长（如 1500 字），
+  /// 在滑动时构建单个庞大的 `Html` 组件会导致严重的单帧阻塞（掉帧）。
+  /// 只拼接连续的纯文本且适度保持颗粒度，以确保滑动流畅。
   static List<HtmlChunk> _mergeAdjacentParagraphs(List<HtmlChunk> chunks) {
     if (chunks.isEmpty) return chunks;
 
@@ -423,15 +417,16 @@ abstract final class HtmlChunkParser {
           merged.last.type == HtmlChunkType.paragraph &&
           chunk.type == HtmlChunkType.paragraph) {
         
+        // 我们使用 <br><br> 来拼接段落，这样既合并了 Flutter 组件，又完全保留了原有的段落间距排版！
         final combinedLength = merged.last.content.length + chunk.content.length;
-        if (combinedLength > 1500) {
-          // 合并后过长，强制断开，保护渲染性能
+        if (combinedLength > 2000) {
+          // 合并后过长，强制断开，保护单帧渲染性能
           merged.add(chunk);
         } else {
-          // 合并文本
+          // 合并文本，使用 <br><br> 保留段落间距
           merged.last = HtmlChunk(
             type: HtmlChunkType.paragraph,
-            content: '${merged.last.content}\n\n${chunk.content}',
+            content: '${merged.last.content}<br><br>${chunk.content}',
           );
         }
       } else {

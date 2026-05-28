@@ -13,7 +13,9 @@ import 'inline_video_player.dart';
 
 /// 单块渲染器 — 根据 HtmlChunkType 渲染对应 Widget，
 /// 自动包裹 RepaintBoundary。
-class HtmlChunkCard extends StatelessWidget {
+/// 修改为 StatefulWidget 并混入 AutomaticKeepAliveClientMixin，
+/// 彻底解决由于列表回收引发 flutter_html 重复解析导致的滑动掉帧问题。
+class HtmlChunkCard extends StatefulWidget {
   final HtmlChunk chunk;
   final double maxWidth;
   final void Function(String imageUrl)? onImageTap;
@@ -26,22 +28,32 @@ class HtmlChunkCard extends StatelessWidget {
   });
 
   @override
+  State<HtmlChunkCard> createState() => _HtmlChunkCardState();
+}
+
+class _HtmlChunkCardState extends State<HtmlChunkCard> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true; // 保持渲染状态存活，避免滑出屏幕后销毁重新解析
+
+  @override
   Widget build(BuildContext context) {
-    final widget = _buildContent(context);
-    if (widget == null) return const SizedBox.shrink();
+    super.build(context);
+    final widgetNode = _buildContent(context);
+    if (widgetNode == null) return const SizedBox.shrink();
 
-    // 1. 修复：精准使用隔离层，防止纯文本图层爆炸
-    final needsBoundary = chunk.type == HtmlChunkType.image || 
-                          chunk.type == HtmlChunkType.iframeVideo;
-
+    // 1. 修复：无条件包裹隔离层（RepaintBoundary）。
+    // 这对于在没有开启懒加载（即使用 Column 渲染）时尤其关键。
+    // 如果没有隔离层，滑动 Column 会导致整个 10000+ 像素的巨无霸容器全量重绘，造成极严重的滑动掉帧。
+    // 在经过使用 `<br><br>` 合并段落后，组件数量已经降至合理的数量（如几十个），
+    // 此时全量加 RepaintBoundary 不会引发图层爆炸，反而能完美隔离文本的复杂绘制，让滑动如丝般顺滑。
     return Padding(
       padding: _paddingForType,
-      child: needsBoundary ? RepaintBoundary(child: widget) : widget,
+      child: RepaintBoundary(child: widgetNode),
     );
   }
 
   // 优化垂直阅读节奏 (Vertical Rhythm)
-  EdgeInsets get _paddingForType => switch (chunk.type) {
+  EdgeInsets get _paddingForType => switch (widget.chunk.type) {
     HtmlChunkType.heading => const EdgeInsets.only(top: 24, bottom: 8),
     HtmlChunkType.paragraph => const EdgeInsets.only(bottom: 14),
     HtmlChunkType.image => const EdgeInsets.symmetric(vertical: 12),
@@ -57,7 +69,7 @@ class HtmlChunkCard extends StatelessWidget {
   Widget? _buildContent(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return switch (chunk.type) {
+    return switch (widget.chunk.type) {
       HtmlChunkType.heading => _buildHeading(context, colorScheme),
       HtmlChunkType.paragraph => _buildParagraph(context, colorScheme),
       HtmlChunkType.image => _buildImage(context),
@@ -83,14 +95,14 @@ class HtmlChunkCard extends StatelessWidget {
   // ── 标题 ──
 
   Widget _buildHeading(BuildContext context, ColorScheme cs) {
-    final fontSize = switch (chunk.headingLevel) {
+    final fontSize = switch (widget.chunk.headingLevel) {
       1 => 24.0,
       2 => 20.0,
       3 => 18.0,
       4 => 16.0,
       _ => 15.0,
     };
-    String htmlData = chunk.content;
+    String htmlData = widget.chunk.content;
     if (Theme.of(context).brightness == Brightness.dark) {
       htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
     }
@@ -114,7 +126,9 @@ class HtmlChunkCard extends StatelessWidget {
   // ── 段落 ──
 
   Widget _buildParagraph(BuildContext context, ColorScheme cs) {
-    String htmlData = '<p>${chunk.content}</p>';
+    // 已经移除了之前错误的 \n\n 合并，此处不需要给不是段落的元素强制套 <p>
+    // 但为了确保样式生效，如果没有外层标签可以套一个 div
+    String htmlData = '<div>${widget.chunk.content}</div>';
     if (Theme.of(context).brightness == Brightness.dark) {
       htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
     }
@@ -122,13 +136,17 @@ class HtmlChunkCard extends StatelessWidget {
       data: htmlData,
       onLinkTap: _handleLinkTap,
       style: {
-        'p': Style(
+        'body': Style(
           fontSize: FontSize(16),
           lineHeight: const LineHeight(1.7),
           color: cs.onSurface,
           margin: Margins.zero,
           padding: HtmlPaddings.zero,
           textAlign: TextAlign.start,
+        ),
+        'p': Style(
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
         ),
         'a': Style(color: cs.primary),
         'strong': Style(fontWeight: FontWeight.w700),
@@ -139,22 +157,23 @@ class HtmlChunkCard extends StatelessWidget {
           fontSize: FontSize(14),
         ),
       },
+      extensions: [_imageExtension(context), TableHtmlExtension()],
     );
   }
 
   // ── 图片 ──
 
   Widget _buildImage(BuildContext context) {
-    final imageUrl = chunk.normalizedImageUrl;
+    final imageUrl = widget.chunk.normalizedImageUrl;
     if (imageUrl == null) return const SizedBox.shrink();
     return _ArticleInlineImage(
       imageUrl: imageUrl,
-      maxWidth: maxWidth,
-      imageWidth: chunk.imageWidth,
-      imageHeight: chunk.imageHeight,
-      style: chunk.attributes['style'],
-      className: chunk.attributes['class'],
-      onTap: onImageTap,
+      maxWidth: widget.maxWidth,
+      imageWidth: widget.chunk.imageWidth,
+      imageHeight: widget.chunk.imageHeight,
+      style: widget.chunk.attributes['style'],
+      className: widget.chunk.attributes['class'],
+      onTap: widget.onImageTap,
     );
   }
 
@@ -172,7 +191,7 @@ class HtmlChunkCard extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Text(
-          chunk.content,
+          widget.chunk.content,
           style: TextStyle(
             fontFamily: 'monospace',
             fontSize: 13,
@@ -199,8 +218,8 @@ class HtmlChunkCard extends StatelessWidget {
       ),
       child: Html(
         data: Theme.of(context).brightness == Brightness.dark
-            ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
-            : chunk.content,
+            ? HtmlContrastUtils.adjustHtmlContrast(widget.chunk.content, cs.surface)
+            : widget.chunk.content,
         onLinkTap: _handleLinkTap,
         style: {
           'body': Style(
@@ -225,8 +244,8 @@ class HtmlChunkCard extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Html(
         data: Theme.of(context).brightness == Brightness.dark
-            ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
-            : chunk.content,
+            ? HtmlContrastUtils.adjustHtmlContrast(widget.chunk.content, cs.surface)
+            : widget.chunk.content,
         onLinkTap: _handleLinkTap,
         style: {
           'table': Style(
@@ -250,68 +269,39 @@ class HtmlChunkCard extends StatelessWidget {
   // ── 列表 ──
 
   Widget _buildList(BuildContext context, ColorScheme cs) {
-    final isOrdered = chunk.attributes['ordered'] == 'true';
-    return Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: chunk.listItems.asMap().entries.map((entry) {
-          final i = entry.key;
-          final item = entry.value;
-
-          String htmlData = item;
-          if (Theme.of(context).brightness == Brightness.dark) {
-            htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
-          }
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 20,
-                  child: Text(
-                    isOrdered ? '${i + 1}.' : '•',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: cs.onSurface,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Html(
-                    data: Theme.of(context).brightness == Brightness.dark
-                        ? HtmlContrastUtils.adjustHtmlContrast(item, cs.surface)
-                        : item,
-                    onLinkTap: _handleLinkTap,
-                    style: {
-                      'body': Style(
-                        fontSize: FontSize(16),
-                        lineHeight: const LineHeight(1.5),
-                        color: cs.onSurface,
-                        margin: Margins.zero,
-                        padding: HtmlPaddings.zero,
-                      ),
-                      'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
-                      'strong': Style(fontWeight: FontWeight.w700),
-                      'em': Style(fontStyle: FontStyle.italic),
-                      'code': Style(
-                        backgroundColor: cs.surfaceContainerHighest,
-                        fontFamily: 'monospace',
-                        fontSize: FontSize(14),
-                      ),
-                    },
-                    extensions: [_imageExtension(context), TableHtmlExtension()],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
+    String htmlData = widget.chunk.content;
+    if (Theme.of(context).brightness == Brightness.dark) {
+      htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
+    }
+    return Html(
+      data: htmlData,
+      onLinkTap: _handleLinkTap,
+      style: {
+        'body': Style(
+          fontSize: FontSize(16),
+          lineHeight: const LineHeight(1.5),
+          color: cs.onSurface,
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+        ),
+        'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
+        'strong': Style(fontWeight: FontWeight.w700),
+        'em': Style(fontStyle: FontStyle.italic),
+        'code': Style(
+          backgroundColor: cs.surfaceContainerHighest,
+          fontFamily: 'monospace',
+          fontSize: FontSize(14),
+        ),
+        'ul': Style(
+          padding: HtmlPaddings.only(left: 20),
+          margin: Margins.zero,
+        ),
+        'ol': Style(
+          padding: HtmlPaddings.only(left: 20),
+          margin: Margins.zero,
+        ),
+      },
+      extensions: [_imageExtension(context), TableHtmlExtension()],
     );
   }
 
@@ -324,15 +314,15 @@ class HtmlChunkCard extends StatelessWidget {
   // ── 媒体占位 ──
 
   Widget _buildMediaPlaceholder(BuildContext context, ColorScheme cs) {
-    final isVideo = chunk.attributes['mediaTag'] == 'video';
-    final videoUrl = chunk.imageSrc;
-    final posterUrl = chunk.posterSrc != null
-        ? ArticleImageService.toProxiedUrl(chunk.posterSrc)
+    final isVideo = widget.chunk.attributes['mediaTag'] == 'video';
+    final videoUrl = widget.chunk.imageSrc;
+    final posterUrl = widget.chunk.posterSrc != null
+        ? ArticleImageService.toProxiedUrl(widget.chunk.posterSrc)
         : null;
-    final aspectRatio = (chunk.imageWidth != null &&
-            chunk.imageHeight != null &&
-            chunk.imageHeight! > 0)
-        ? chunk.imageWidth! / chunk.imageHeight!
+    final aspectRatio = (widget.chunk.imageWidth != null &&
+            widget.chunk.imageHeight != null &&
+            widget.chunk.imageHeight! > 0)
+        ? widget.chunk.imageWidth! / widget.chunk.imageHeight!
         : 16 / 9;
 
     // 视频 → 内联播放器
@@ -352,13 +342,13 @@ class HtmlChunkCard extends StatelessWidget {
   }
 
   Widget _buildIframePlaceholder(BuildContext context, ColorScheme cs, double aspectRatio) {
-    final url = chunk.imageSrc;
-    final posterUrl = chunk.posterSrc != null
-        ? ArticleImageService.toProxiedUrl(chunk.posterSrc)
+    final url = widget.chunk.imageSrc;
+    final posterUrl = widget.chunk.posterSrc != null
+        ? ArticleImageService.toProxiedUrl(widget.chunk.posterSrc)
         : null;
 
     return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: 400),
+      constraints: BoxConstraints(maxWidth: widget.maxWidth, maxHeight: 400),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: AspectRatio(
@@ -482,8 +472,8 @@ class HtmlChunkCard extends StatelessWidget {
   Widget _buildRawHtml(BuildContext context, ColorScheme cs) {
     return Html(
       data: Theme.of(context).brightness == Brightness.dark
-          ? HtmlContrastUtils.adjustHtmlContrast(chunk.content, cs.surface)
-          : chunk.content,
+          ? HtmlContrastUtils.adjustHtmlContrast(widget.chunk.content, cs.surface)
+          : widget.chunk.content,
       onLinkTap: _handleLinkTap,
       style: {
         'body': Style(
@@ -529,7 +519,7 @@ class HtmlChunkCard extends StatelessWidget {
           explicitHeight ??= 20.0;
         }
 
-        final renderWidth = explicitWidth ?? maxWidth;
+        final renderWidth = explicitWidth ?? widget.maxWidth;
         final cacheWidth = (renderWidth * dpr).round();
 
         return ClipRRect(
@@ -547,7 +537,7 @@ class HtmlChunkCard extends StatelessWidget {
             fadeOutDuration: const Duration(milliseconds: 80),
             placeholder: (context, url) => Container(
               width: explicitWidth ?? 60,
-              height: explicitHeight ?? (explicitWidth != null ? explicitWidth : 60),
+              height: explicitHeight ?? explicitWidth ?? 60,
               color: Theme.of(context)
                   .colorScheme
                   .surfaceContainerHighest
@@ -562,7 +552,7 @@ class HtmlChunkCard extends StatelessWidget {
             ),
             errorWidget: (context, url, error) => Container(
               width: explicitWidth ?? 60,
-              height: explicitHeight ?? (explicitWidth != null ? explicitWidth : 60),
+              height: explicitHeight ?? explicitWidth ?? 60,
               color: Theme.of(context)
                   .colorScheme
                   .surfaceContainerHighest
@@ -572,9 +562,9 @@ class HtmlChunkCard extends StatelessWidget {
               ),
             ),
             imageBuilder: (context, imageProvider) {
-              if (onImageTap != null) {
+              if (widget.onImageTap != null) {
                 return GestureDetector(
-                  onTap: () => onImageTap!(imageUrl),
+                  onTap: () => widget.onImageTap!(imageUrl),
                   child: Image(image: imageProvider, fit: BoxFit.contain),
                 );
               }
@@ -663,7 +653,7 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage> with Automatic
           width: widget.maxWidth,
           height: hasRealDimensions
               ? (widget.maxWidth / aspectRatio!).clamp(40.0, 420.0)
-              : (isCutOff ? 220.0 : 100.0),
+              : (isCutOff ? 220.0 : widget.maxWidth * 0.6), // 为未知高度的图片设置一个更合理的默认高度，减少突兀跳动
           child: const Center(
             child: SizedBox(
               width: 24,
