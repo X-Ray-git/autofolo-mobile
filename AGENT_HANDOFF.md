@@ -2062,21 +2062,6 @@ FeedHttp.collectEntries(read: true, publishedAfter: isoStr, ...);
 - **架构事实**：**绝对不能**。对于任何现代 GUI 框架（Flutter / 原生 iOS 等），UI 视图的实例化（`build`）和排版计算必须处于并且只处于主线程。此处的“渲染队列”并非指后台的图形预渲染，而是**主线程上的分批挂载（Staggered Mounting）策略**，属于一种时间换空间的妥协。
 - **系统已实现的真正“预加载（Preloading）”**：应用中属于“无 UI 计算”的环节均已尽数剥离并移交后台处理。例如列表刷新时通过 `withContent: true` 将文章 HTML 悉数存入 `LocalArticleDbService`，乃至调用各种 Worker 提前发起深度网页提取、大模型全文翻译与摘要等，构成了底层数据的预载。这一套零卡顿的数据预备流程，加上卡片转场时这 350ms 的“错峰避让渲染”，共同奠定了应用顶级的操作流畅度。
 
----
-
-## 61. 未来功能规划 (Future Features)
-
-本文档记录了目前暂未实现，但在未来迭代中计划加入的改进项。
-
-### 60.1 后台静默刷新通知角标 (Background Badge Sync)
-- **背景**：目前应用在“退后台（挂起）”状态或处于前台时，可以实时更新桌面图标的未读角标（红点或数字）。但如果应用被系统完全杀掉，即使服务器端有了新文章，桌面角标也无法自动更新，必须等到用户下次打开应用。
-- **目标**：实现应用在完全关闭状态下，桌面角标依然能随服务器未读文章数量变化而更新。
-- **技术选型方向**：
-  1. **Push Notifications (推荐)**：集成 Firebase Cloud Messaging (FCM) 或极光推送。服务端有新文章产生时，向设备发送一条静默推送（Silent Push / Data Message），唤醒客户端一小段后台执行时间，由客户端计算未读数并调用 `flutter_app_badger` 更新角标。
-  2. **Background Fetch**：使用 `workmanager` 或类似插件，每隔一段时间在后台拉取一次数据更新角标。缺点是实时性差且受各大 Android 定制系统（如 MIUI, OriginOS, ColorOS）的后台纯净机制严格限制。
-- **优先级**：中 (根据用户对通知实时性的需求而定)。
-
----
 
 ## 61. 延迟 build + widget 缓存：根治重度技术文章首次打开掉帧 (2026-05-28 晚)
 
@@ -2196,4 +2181,18 @@ if (_cachedWidget == null || _cachedBrightness != brightness) {
 以下来自本次对话但未实施的讨论，记录供后续参考：
 
 1. **方案三（Isolate 预处理 flutter_html）**：如果未来遇到 widget 缓存后单块 build 仍然超 5ms 的文章，可考虑将段落/标题的 HTML→TextSpan 转换搬进 Isolate，UI 线程直接拼 RichText。表格和列表暂不处理（数量少，优先级低）。
-2. **`_renderIncrementally` 的 16ms 延迟**：在 widget 缓存生效后，这个延迟的必要性大幅降低（原有块的 rebuild 已是 ns 级）。后续可考虑降到 0ms 或直接去掉渐进追加，配合 `_builtCount` 控制首帧数量即可。
+2. **`_renderIncrementally` 的 16ms 延迟**：在 widget 缓存生效后，这个延迟的必要性大幅降低（原有块的 rebuild 已是 ns 级）。我们在 60 节中直接干掉了 `_renderIncrementally` 数据层的逐个追加，完全由 View 层的 `_builtCount` 配合首帧转场保护（350ms）接管了渲染控制权，达到了完美的体验。
+
+---
+
+## 62. 未来功能规划 (Future Features)
+
+本文档记录了目前暂未实现，但在未来迭代中计划加入的改进项。
+
+### 62.1 后台静默刷新通知角标 (Background Badge Sync)
+- **背景**：目前应用在“退后台（挂起）”状态或处于前台时，可以实时更新桌面图标的未读角标（红点或数字）。但如果应用被系统完全杀掉，即使服务器端有了新文章，桌面角标也无法自动更新，必须等到用户下次打开应用。
+- **目标**：实现应用在完全关闭状态下，桌面角标依然能随服务器未读文章数量变化而更新。
+- **技术选型方向**：
+  1. **Push Notifications (推荐)**：集成 Firebase Cloud Messaging (FCM) 或极光推送。服务端有新文章产生时，向设备发送一条静默推送（Silent Push / Data Message），唤醒客户端一小段后台执行时间，由客户端计算未读数并调用 `flutter_app_badger` 更新角标。
+  2. **Background Fetch**：使用 `workmanager` 或类似插件，每隔一段时间在后台拉取一次数据更新角标。缺点是实时性差且受各大 Android 定制系统（如 MIUI, OriginOS, ColorOS）的后台纯净机制严格限制。
+- **优先级**：中 (根据用户对通知实时性的需求而定)。

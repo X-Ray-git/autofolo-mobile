@@ -34,9 +34,7 @@ class ArticleController extends GetxController {
   String normalizedContent = '';
   List<String> imageUrls = [];
   final chunks = <HtmlChunk>[].obs;
-  final renderedChunks = <HtmlChunk>[].obs;
   final translatedChunks = <HtmlChunk>[].obs;
-  final renderedTranslatedChunks = <HtmlChunk>[].obs;
   final showTranslation = false.obs;
   final isRead = false.obs;
   final isUpdatingReadState = false.obs;
@@ -54,28 +52,6 @@ class ArticleController extends GetxController {
 
   ArticleController(this.article);
 
-  Future<void> _renderIncrementally(List<HtmlChunk> source, RxList<HtmlChunk> target) async {
-    target.clear();
-    if (source.isEmpty) return;
-
-    // 等待页面转场动画结束（约 300ms），避免在动画期间主线程排版 HTML 导致掉帧
-    final elapsed = DateTime.now().difference(_initTime).inMilliseconds;
-    if (elapsed < 350) {
-      await Future.delayed(Duration(milliseconds: 350 - elapsed));
-    }
-    if (isClosed) return;
-
-    // 降低首批渲染的块数，进一步减轻主线程瞬时压力
-    final initialCount = source.length > 2 ? 2 : source.length;
-    target.addAll(source.sublist(0, initialCount));
-
-    for (int i = initialCount; i < source.length; i++) {
-      // 稍微放宽渲染间隔
-      await Future.delayed(const Duration(milliseconds: 24));
-      if (isClosed) return;
-      target.add(source[i]);
-    }
-  }
 
   @override
   void onInit() {
@@ -127,14 +103,12 @@ class ArticleController extends GetxController {
       normalizedContent = result.normalizedContent;
       imageUrls = result.imageUrls;
       chunks.value = result.chunks;
-      _renderIncrementally(result.chunks, renderedChunks);
       
       if (hasTranslation) {
         isTranslated.value = true;
         translationContent.value = tContent;
         if (result.translatedChunks.isNotEmpty) {
           translatedChunks.value = result.translatedChunks;
-          _renderIncrementally(result.translatedChunks, renderedTranslatedChunks);
         }
         showTranslation.value = true;
       }
@@ -357,7 +331,6 @@ class ArticleController extends GetxController {
         // 同步解析译文的块
         final tChunks = HtmlChunkParser.parseSync(record.translatedContent!);
         translatedChunks.value = tChunks;
-        _renderIncrementally(tChunks, renderedTranslatedChunks);
         showTranslation.value = true;
         AppFeedback.success('翻译完成', '已生成文章译文');
       } else {
@@ -618,8 +591,16 @@ class _ArticlePageViewState extends State<ArticlePageView> {
     if (_progressiveBuildScheduled) return;
     _progressiveBuildScheduled = true;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+
+      // 等待页面转场动画结束（约 300ms），避免在动画期间主线程排版 HTML 导致掉帧
+      final elapsed = DateTime.now().difference(controller._initTime).inMilliseconds;
+      if (elapsed < 350) {
+        await Future.delayed(Duration(milliseconds: 350 - elapsed));
+      }
+      if (!mounted) return;
+
       _buildNextBatch();
     });
   }
@@ -812,9 +793,9 @@ class _ArticlePageViewState extends State<ArticlePageView> {
               }
 
               final activeChunks = controller.showTranslation.value &&
-                      controller.renderedTranslatedChunks.isNotEmpty
-                  ? controller.renderedTranslatedChunks
-                  : controller.renderedChunks;
+                      controller.translatedChunks.isNotEmpty
+                  ? controller.translatedChunks
+                  : controller.chunks;
 
               if (activeChunks.isEmpty) {
                 return SliverToBoxAdapter(
