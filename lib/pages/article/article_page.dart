@@ -20,6 +20,7 @@ import '../../services/article_state_notifier.dart';
 import '../../utils/article_content_utils.dart';
 import '../../utils/html_chunk_parser.dart';
 import '../../utils/security_utils.dart';
+import '../../common/constants/constants.dart';
 import '../../utils/storage.dart';
 import '../timeline/timeline_controller.dart';
 import 'widgets/html_chunk_card.dart';
@@ -570,9 +571,27 @@ class _ArticlePageViewState extends State<ArticlePageView> {
   late final String _tag;
   late final ArticleController controller;
   late final ScrollController _scrollController;
-  
+
   // 1. 改为使用 ValueNotifier 以实现局部刷新
   final ValueNotifier<double> _scrollProgress = ValueNotifier(0.0);
+
+  // 延迟 build：首帧只真正构建前 N 个 HtmlChunkCard，其余用 SizedBox 占位。
+  // 后续逐批替换为真正的卡片，替换后不回收（保持 Column 架构不变）。
+  int _builtCount = 0;
+  int _lastActiveChunkCount = 0;
+  bool? _lastShowTranslation;
+  bool _progressiveBuildScheduled = false;
+
+  static int get _initialBuildCount {
+    final raw = GStorage.setting.get(
+      StorageKeys.articleInitialChunkBuildCount,
+      defaultValue: 5,
+    );
+    if (raw is int && raw >= 3 && raw <= 20) return raw;
+    return 5;
+  }
+
+  static const int _buildBatchSize = 10; // 每批多构建 10 个块
 
   @override
   void initState() {
@@ -580,16 +599,50 @@ class _ArticlePageViewState extends State<ArticlePageView> {
     _tag = widget.article.entryId;
     controller = Get.put(ArticleController(widget.article), tag: _tag);
     _scrollController = ScrollController();
+    _builtCount = _initialBuildCount;
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
-    _scrollProgress.dispose(); // 记得释放 Notifier
+    _scrollProgress.dispose();
     if (Get.isRegistered<ArticleController>(tag: _tag)) {
       Get.delete<ArticleController>(tag: _tag);
     }
     super.dispose();
+  }
+
+  /// 首帧提交后，分批构建剩余的占位块。
+  /// 每批之间有 50ms 间隔，让 UI 线程呼吸。
+  void _scheduleProgressiveBuild() {
+    if (_progressiveBuildScheduled) return;
+    _progressiveBuildScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _buildNextBatch();
+    });
+  }
+
+  void _buildNextBatch() {
+    if (!mounted) return;
+    final total = _lastActiveChunkCount;
+    if (_builtCount >= total) {
+      _progressiveBuildScheduled = false;
+      return;
+    }
+
+    setState(() {
+      _builtCount = (_builtCount + _buildBatchSize).clamp(0, total);
+    });
+
+    if (_builtCount < total) {
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (mounted) _buildNextBatch();
+      });
+    } else {
+      _progressiveBuildScheduled = false;
+    }
   }
 
   @override
@@ -805,22 +858,47 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                 );
               }
 
-              // 我们移除了按需懒加载 (SliverList)，强制使用 Column，因为我们已经通过
-              // HtmlChunkParser 的段落合并以及 RepaintBoundary 图层隔离解决了初次构建
-              // 卡顿和滑动掉帧问题。保持 Column 可以确保阅读进度条绝对准确，并提供最平滑的体验。
+              // 延迟 build：首帧只真正构建前 _builtCount 个 HtmlChunkCard，
+              // 其余用 estimatedHeight 的 SizedBox 占位。首帧提交后分批补全，
+              // 补全后不回收（保持 Column 架构不变，进度条准确）。
+              final totalChunks = activeChunks.length;
+              final showTrans = controller.showTranslation.value;
+
+              // 翻译切换 → 重置构建计数（内容变了，缓存失效）
+              if (_lastShowTranslation != showTrans) {
+                _lastShowTranslation = showTrans;
+                _builtCount = _initialBuildCount.clamp(0, totalChunks);
+                _progressiveBuildScheduled = false;
+              }
+              _lastActiveChunkCount = totalChunks;
+
+              // 存在未构建的占位块 → 安排渐进构建
+              if (_builtCount < totalChunks) {
+                _scheduleProgressiveBuild();
+              }
 
               return SliverToBoxAdapter(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: activeChunks.asMap().entries.map((entry) {
-                    final isTrans = controller.showTranslation.value;
-                    return HtmlChunkCard(
-                      key: ValueKey('${isTrans ? "trans" : "orig"}_${entry.key}'),
-                      chunk: entry.value,
-                      maxWidth: maxWidth,
-                      onImageTap: (url) => controller.openImagePreview(url, context),
+                  children: List.generate(totalChunks, (idx) {
+                    final chunk = activeChunks[idx];
+                    if (idx < _builtCount) {
+                      return HtmlChunkCard(
+                        key: ValueKey(
+                            '${showTrans ? "trans" : "orig"}_$idx'),
+                        chunk: chunk,
+                        maxWidth: maxWidth,
+                        onImageTap: (url) =>
+                            controller.openImagePreview(url, context),
+                      );
+                    }
+                    // 占位：用预估高度撑开 Column，避免后续替换时大幅跳布局
+                    return SizedBox(
+                      key: ValueKey('placeholder_$idx'),
+                      height: chunk.estimatedHeight,
+                      child: const Center(),
                     );
-                  }).toList(),
+                  }),
                 ),
               );
             }),

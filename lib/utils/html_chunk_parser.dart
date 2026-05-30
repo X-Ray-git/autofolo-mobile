@@ -47,6 +47,62 @@ class HtmlChunk {
     if (imageSrc == null) return null;
     return ArticleImageService.toProxiedUrl(imageSrc);
   }
+
+  /// 预估该块在屏幕上的高度（像素），用于占位 SizedBox。
+  /// 不做精确计算，误差在 ±30% 以内即可，避免图片加载后大幅跳布局。
+  double get estimatedHeight {
+    const double charPerLine = 42; // 混合中英文，16px 字号在 ~340px 宽下的粗略每行字符数
+    const double lineH = 27.0; // ~16px * 1.7 行高
+
+    switch (type) {
+      case HtmlChunkType.heading:
+        final lines =
+            (content.length / charPerLine).ceil().clamp(1, 5).toDouble();
+        final fontSize = switch (headingLevel) {
+          1 => 24.0,
+          2 => 20.0,
+          3 => 18.0,
+          4 => 16.0,
+          _ => 15.0,
+        };
+        return lines * fontSize * 1.35 + 32; // 24 top + 8 bottom
+      case HtmlChunkType.paragraph:
+        final lines =
+            (content.length / charPerLine).ceil().clamp(1, 100).toDouble();
+        return lines * lineH + 14;
+      case HtmlChunkType.image:
+        if (imageWidth != null &&
+            imageHeight != null &&
+            imageHeight! > 0 &&
+            imageWidth! > 0) {
+          // 有实际尺寸 → 按比例估算渲染高度
+          final ratio = imageHeight! / imageWidth!;
+          return (340 * ratio).clamp(40, 420) + 24;
+        }
+        return 220; // 无尺寸 → 保守默认值
+      case HtmlChunkType.codeBlock:
+        final lines = content.split('\n').length.clamp(1, 50).toDouble();
+        return lines * 20 + 24;
+      case HtmlChunkType.blockquote:
+        final lines =
+            (content.length / charPerLine).ceil().clamp(1, 50).toDouble();
+        return lines * 24 + 24;
+      case HtmlChunkType.table:
+        return 120;
+      case HtmlChunkType.list:
+        final lines =
+            (content.length / charPerLine).ceil().clamp(1, 30).toDouble();
+        return lines * 24 + 14;
+      case HtmlChunkType.horizontalRule:
+        return 32;
+      case HtmlChunkType.iframeVideo:
+        return 250;
+      case HtmlChunkType.rawHtml:
+        final lines =
+            (content.length / charPerLine).ceil().clamp(1, 50).toDouble();
+        return lines * lineH + 14;
+    }
+  }
 }
 
 /// HTML 块解析器 — 将完整 HTML 拆分为可逐块渲染的模型列表。

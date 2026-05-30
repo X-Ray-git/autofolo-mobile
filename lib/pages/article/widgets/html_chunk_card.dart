@@ -35,20 +35,28 @@ class _HtmlChunkCardState extends State<HtmlChunkCard> with AutomaticKeepAliveCl
   @override
   bool get wantKeepAlive => true; // 保持渲染状态存活，避免滑出屏幕后销毁重新解析
 
+  // 缓存：避免每次父级重建时重新解析 HTML。
+  // flutter_html 的 Html() 调用是 CPU 密集操作（HTML 字符串 → Widget 树）。
+  // 同一篇文章内 chunk 内容不变、主题不变 → 缓存 hit，build 耗时从 ms 级降到 ns 级。
+  Widget? _cachedWidget;
+  Brightness? _cachedBrightness;
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final widgetNode = _buildContent(context);
-    if (widgetNode == null) return const SizedBox.shrink();
 
-    // 1. 修复：无条件包裹隔离层（RepaintBoundary）。
-    // 这对于在没有开启懒加载（即使用 Column 渲染）时尤其关键。
-    // 如果没有隔离层，滑动 Column 会导致整个 10000+ 像素的巨无霸容器全量重绘，造成极严重的滑动掉帧。
-    // 在经过使用 `<br><br>` 合并段落后，组件数量已经降至合理的数量（如几十个），
-    // 此时全量加 RepaintBoundary 不会引发图层爆炸，反而能完美隔离文本的复杂绘制，让滑动如丝般顺滑。
+    final brightness = Theme.of(context).brightness;
+
+    if (_cachedWidget == null || _cachedBrightness != brightness) {
+      _cachedWidget = _buildContent(context);
+      _cachedBrightness = brightness;
+    }
+
+    if (_cachedWidget == null) return const SizedBox.shrink();
+
     return Padding(
       padding: _paddingForType,
-      child: RepaintBoundary(child: widgetNode),
+      child: RepaintBoundary(child: _cachedWidget!),
     );
   }
 
