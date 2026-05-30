@@ -49,17 +49,28 @@ class ArticleController extends GetxController {
   final isFetchingContent = false.obs;
   final isParsingContent = false.obs;
 
+  final DateTime _initTime = DateTime.now();
+
   ArticleController(this.article);
 
   Future<void> _renderIncrementally(List<HtmlChunk> source, RxList<HtmlChunk> target) async {
     target.clear();
     if (source.isEmpty) return;
 
-    final initialCount = source.length > 3 ? 3 : source.length;
+    // 等待页面转场动画结束（约 300ms），避免在动画期间主线程排版 HTML 导致掉帧
+    final elapsed = DateTime.now().difference(_initTime).inMilliseconds;
+    if (elapsed < 350) {
+      await Future.delayed(Duration(milliseconds: 350 - elapsed));
+    }
+    if (isClosed) return;
+
+    // 降低首批渲染的块数，进一步减轻主线程瞬时压力
+    final initialCount = source.length > 2 ? 2 : source.length;
     target.addAll(source.sublist(0, initialCount));
 
     for (int i = initialCount; i < source.length; i++) {
-      await Future.delayed(const Duration(milliseconds: 16));
+      // 稍微放宽渲染间隔
+      await Future.delayed(const Duration(milliseconds: 24));
       if (isClosed) return;
       target.add(source[i]);
     }
